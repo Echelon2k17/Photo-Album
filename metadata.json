@@ -1,0 +1,6 @@
+{
+  "name": "Lumina Album Studio",
+  "description": "Professional high-resolution photo album creator, editor, and print-ready PDF/ZIP exporter.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
