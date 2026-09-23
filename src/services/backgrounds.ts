@@ -240,13 +240,37 @@ export const BACKGROUND_GRADIENT_PRESETS: BackgroundGradientPreset[] = [
 ];
 
 export interface BackgroundTexturePreset {
-  id: 'linen' | 'paper' | 'grid' | 'dots' | 'canvas' | 'woodgrain' | 'terrazzo' | 'stripes' | 'geometric';
+  id: 'linen' | 'paper' | 'grid' | 'dots' | 'canvas' | 'woodgrain' | 'terrazzo' | 'stripes' | 'geometric' | 'flowers' | 'smiley' | 'hearts' | 'botanical';
   name: string;
   description: string;
   defaultBaseColor: string;
 }
 
 export const BACKGROUND_TEXTURE_PRESETS: BackgroundTexturePreset[] = [
+  {
+    id: 'flowers',
+    name: 'Blossom Floral Pattern',
+    description: 'Charming illustrated blossom petals and delicate floral silhouettes.',
+    defaultBaseColor: '#fdf8f9',
+  },
+  {
+    id: 'smiley',
+    name: 'Joyful Smiley Faces',
+    description: 'Playful warm smiley pattern for kids, birthdays, friendship, and family memories.',
+    defaultBaseColor: '#fffdf5',
+  },
+  {
+    id: 'hearts',
+    name: 'Sweet Floating Hearts',
+    description: 'Romantic heart watermark pattern for wedding, anniversary, and Valentine albums.',
+    defaultBaseColor: '#fff5f7',
+  },
+  {
+    id: 'botanical',
+    name: 'Botanical Leaf & Vines',
+    description: 'Earthy foliage and botanical leaf pattern for outdoor and nature photography.',
+    defaultBaseColor: '#f4f8f4',
+  },
   {
     id: 'linen',
     name: 'Artisan Woven Linen',

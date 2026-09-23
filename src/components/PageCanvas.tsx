@@ -132,6 +132,30 @@ export const AlbumPageCanvas: React.FC<AlbumPageCanvasProps> = ({
         }
       }
 
+      // If custom background image URL is present, load it
+      if (page.backgroundConfig?.type === 'image' && page.backgroundConfig.customImageUrl && !isCancelled) {
+        const bgImg = new Image();
+        let bgLoaded = false;
+        await new Promise<void>((res) => {
+          bgImg.onload = () => {
+            bgLoaded = true;
+            res();
+          };
+          bgImg.onerror = () => {
+            bgLoaded = false;
+            res();
+          };
+          bgImg.src = page.backgroundConfig!.customImageUrl!;
+        });
+        if (bgLoaded && !isCancelled) {
+          newMap.set('custom_bg', {
+            image: bgImg,
+            width: bgImg.naturalWidth || 1200,
+            height: bgImg.naturalHeight || 800,
+          });
+        }
+      }
+
       if (!isCancelled) {
         setPhotosMap(newMap);
       }

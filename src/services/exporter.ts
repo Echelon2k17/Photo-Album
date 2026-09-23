@@ -112,6 +112,22 @@ export async function exportAlbum(
         if (source) photosMap.set(photoId, source);
       }
 
+      if (page.backgroundConfig?.type === 'image' && page.backgroundConfig.customImageUrl) {
+        const bgImg = new Image();
+        await new Promise<void>((res) => {
+          bgImg.onload = () => res();
+          bgImg.onerror = () => res();
+          bgImg.src = page.backgroundConfig!.customImageUrl!;
+        });
+        if (bgImg.naturalWidth > 0) {
+          photosMap.set('custom_bg', {
+            image: bgImg,
+            width: bgImg.naturalWidth,
+            height: bgImg.naturalHeight,
+          });
+        }
+      }
+
       // 2. Render page using the universal renderer
       const layout = getLayoutById(page.layoutId);
       const margins = page.customMargins || album.margins;
@@ -191,6 +207,22 @@ export async function exportAlbum(
       for (const photoId of requiredPhotoIds) {
         const source = await loadOriginalPhotoForExport(photoId);
         if (source) photosMap.set(photoId, source);
+      }
+
+      if (page.backgroundConfig?.type === 'image' && page.backgroundConfig.customImageUrl) {
+        const bgImg = new Image();
+        await new Promise<void>((res) => {
+          bgImg.onload = () => res();
+          bgImg.onerror = () => res();
+          bgImg.src = page.backgroundConfig!.customImageUrl!;
+        });
+        if (bgImg.naturalWidth > 0) {
+          photosMap.set('custom_bg', {
+            image: bgImg,
+            width: bgImg.naturalWidth,
+            height: bgImg.naturalHeight,
+          });
+        }
       }
 
       const layout = getLayoutById(page.layoutId);

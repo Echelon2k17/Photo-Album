@@ -7,7 +7,8 @@ import {
   Check,
   RotateCcw,
   Sliders,
-  CheckCheck
+  CheckCheck,
+  Upload
 } from 'lucide-react';
 import { AlbumPage, PageBackgroundConfig, StoredPhoto } from '../types/album';
 import {

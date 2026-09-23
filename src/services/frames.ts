@@ -3,7 +3,7 @@ import { PhotoFrameConfig } from '../types/album';
 export interface FramePreset {
   id: string;
   name: string;
-  category: 'mat' | 'wood' | 'metallic' | 'vintage' | 'minimal';
+  category: 'mat' | 'wood' | 'metallic' | 'vintage' | 'minimal' | 'fun' | 'custom';
   description: string;
   config: PhotoFrameConfig;
   previewCss: string;
@@ -418,6 +418,99 @@ export const FRAME_PRESETS: FramePreset[] = [
       shadowBlurMm: 5,
     },
     previewCss: 'box-shadow: 0 8px 18px rgba(0,0,0,0.22); border: 1px solid rgba(0,0,0,0.06); background: #ffffff;',
+  },
+
+  // 6. Fun & Decorative: Floral & Smiley
+  {
+    id: 'floral-blossom',
+    name: 'Blossom Floral Border',
+    category: 'fun',
+    description: 'Pastel rose border with hand-illustrated corner flower blossoms and leafy vines.',
+    config: {
+      styleId: 'floral-blossom',
+      type: 'floral',
+      borderWidthMm: 5,
+      borderColor: '#fdf2f4',
+      matColor: '#fcf0f2',
+      innerBorderColor: '#e0a9b5',
+      innerBorderWidthMm: 0.5,
+      shadow: true,
+      shadowBlurMm: 2.5,
+      cornerRadiusMm: 2,
+    },
+    previewCss: 'border: 5px solid #fdf2f4; outline: 1px solid #f4cfd7; box-shadow: 0 3px 6px rgba(220,100,120,0.15); background: #fff5f7;',
+  },
+  {
+    id: 'floral-vintage',
+    name: 'Golden Botanical Garden',
+    category: 'fun',
+    description: 'Fine art sage and gold floral corner motifs with vintage appeal.',
+    config: {
+      styleId: 'floral-vintage',
+      type: 'floral',
+      borderWidthMm: 6,
+      borderColor: '#f4f6f0',
+      matColor: '#eff3ea',
+      innerBorderColor: '#b5c4a6',
+      innerBorderWidthMm: 0.6,
+      shadow: true,
+      shadowBlurMm: 3,
+      cornerRadiusMm: 1.5,
+    },
+    previewCss: 'border: 6px solid #f4f6f0; outline: 1px solid #c2ceb6; box-shadow: 0 3px 6px rgba(80,110,70,0.12); background: #fbfdf9;',
+  },
+  {
+    id: 'happy-smiley',
+    name: 'Joyful Sunshine Smiley',
+    category: 'fun',
+    description: 'Bright sunshine yellow frame accented with cheerful smiling emoji corner badges.',
+    config: {
+      styleId: 'happy-smiley',
+      type: 'smiley',
+      borderWidthMm: 5.5,
+      borderColor: '#fef08a',
+      matColor: '#fef9c3',
+      innerBorderColor: '#f59e0b',
+      innerBorderWidthMm: 0.6,
+      cornerRadiusMm: 4,
+      shadow: true,
+      shadowBlurMm: 2.5,
+    },
+    previewCss: 'border: 5px solid #fef08a; outline: 1px solid #fde047; box-shadow: 0 3px 6px rgba(245,158,11,0.2); background: #fefce8;',
+  },
+  {
+    id: 'smiley-pop',
+    name: 'Pop Party Smileys',
+    category: 'fun',
+    description: 'Vibrant punchy smiley frame perfect for birthdays, vacations, and celebrations.',
+    config: {
+      styleId: 'smiley-pop',
+      type: 'smiley',
+      borderWidthMm: 6.5,
+      borderColor: '#fed7aa',
+      matColor: '#ffedd5',
+      innerBorderColor: '#fb923c',
+      innerBorderWidthMm: 0.7,
+      cornerRadiusMm: 5,
+      shadow: true,
+      shadowBlurMm: 3,
+    },
+    previewCss: 'border: 6px solid #fed7aa; outline: 1px solid #fdba74; box-shadow: 0 4px 8px rgba(249,115,22,0.2); background: #fff7ed;',
+  },
+  {
+    id: 'custom-frame-upload',
+    name: 'Custom Uploaded Frame',
+    category: 'custom',
+    description: 'Upload your own PNG frame, border artwork, or sticker graphic.',
+    config: {
+      styleId: 'custom-frame-upload',
+      type: 'custom_image',
+      borderWidthMm: 5,
+      borderColor: '#ffffff',
+      shadow: true,
+      shadowBlurMm: 2,
+    },
+    previewCss: 'border: 2px dashed #94a3b8; background: #f8fafc;',
   },
 ];
 

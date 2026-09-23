@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Check, Frame, Sliders, Sparkles, X } from 'lucide-react';
+import React, { useRef, useState } from 'react';
+import { Check, Frame, Sliders, Sparkles, Upload, X } from 'lucide-react';
 import { PhotoFrameConfig, StoredPhoto } from '../types/album';
 import { FRAME_PRESETS, FramePreset, getFramePresetById } from '../services/frames';
 
@@ -10,7 +10,7 @@ interface FramePickerModalProps {
   onClose: () => void;
 }
 
-type FrameCategoryTab = 'all' | 'mat' | 'wood' | 'metallic' | 'vintage' | 'minimal';
+type FrameCategoryTab = 'all' | 'mat' | 'wood' | 'metallic' | 'vintage' | 'minimal' | 'fun' | 'custom';
 
 export const FramePickerModal: React.FC<FramePickerModalProps> = ({
   currentFrameConfig,
@@ -81,11 +81,13 @@ export const FramePickerModal: React.FC<FramePickerModalProps> = ({
         <div className="flex gap-2 overflow-x-auto py-3 border-b border-slate-100">
           {[
             { id: 'all', label: 'All Frames' },
+            { id: 'fun', label: '🌸 Floral & Smiley' },
             { id: 'mat', label: 'Archival Mats' },
             { id: 'wood', label: 'Natural Wood' },
             { id: 'metallic', label: 'Luxe Metallics' },
             { id: 'vintage', label: 'Vintage & Polaroid' },
             { id: 'minimal', label: 'Modern Minimal' },
+            { id: 'custom', label: '📁 Custom Upload' },
           ].map((cat) => (
             <button
               key={cat.id}
@@ -103,6 +105,57 @@ export const FramePickerModal: React.FC<FramePickerModalProps> = ({
 
         {/* Modal Body: Split between Preset Grid and Custom Adjustments */}
         <div className="flex-1 overflow-y-auto py-4 space-y-6">
+          {/* Custom Upload section if custom tab is active or requested */}
+          {activeCategory === 'custom' && (
+            <div className="p-4 bg-amber-50/70 border border-amber-200 rounded-xl space-y-3">
+              <div className="flex items-center gap-2">
+                <Upload className="w-4 h-4 text-amber-600" />
+                <h4 className="text-xs font-bold text-amber-900">Upload Custom Frame Border or Sticker (PNG)</h4>
+              </div>
+              <p className="text-xs text-amber-700">
+                Choose a transparent PNG border, floral wreath, or sticker graphic from your device.
+              </p>
+              <label className="inline-flex items-center gap-2 px-4 py-2 bg-white border border-amber-300 hover:bg-amber-100/50 rounded-xl text-xs font-bold text-amber-900 cursor-pointer shadow-xs transition">
+                <Upload className="w-3.5 h-3.5" />
+                <span>Select Frame Image</span>
+                <input
+                  type="file"
+                  accept="image/png,image/webp,image/jpeg"
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) {
+                      const reader = new FileReader();
+                      reader.onload = (evt) => {
+                        const url = evt.target?.result as string;
+                        setConfig({
+                          ...config,
+                          type: 'custom_image',
+                          customImageUrl: url,
+                          borderColor: '#ffffff',
+                          borderWidthMm: 5,
+                        });
+                      };
+                      reader.readAsDataURL(file);
+                    }
+                  }}
+                />
+              </label>
+              {config.customImageUrl && (
+                <div className="flex items-center gap-3 pt-2">
+                  <img
+                    src={config.customImageUrl}
+                    alt="Custom frame preview"
+                    className="w-14 h-14 object-contain rounded border border-amber-300 bg-white p-1"
+                  />
+                  <span className="text-xs font-semibold text-emerald-700 flex items-center gap-1">
+                    <Check className="w-3.5 h-3.5" /> Frame loaded successfully
+                  </span>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Preset Cards Grid */}
           <div>
             <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">

@@ -41,13 +41,13 @@ export interface AlbumLayout {
   slots: LayoutSlot[];
 }
 
-export type FrameCategory = 'mat' | 'wood' | 'metallic' | 'vintage' | 'minimal' | 'custom';
+export type FrameCategory = 'mat' | 'wood' | 'metallic' | 'vintage' | 'minimal' | 'fun' | 'custom';
 
 export interface PhotoFrameConfig {
   styleId?: string;
   category?: FrameCategory;
   name?: string;
-  type: 'none' | 'border' | 'mat' | 'wood' | 'metallic' | 'polaroid' | 'vintage' | 'minimal';
+  type: 'none' | 'border' | 'mat' | 'wood' | 'metallic' | 'polaroid' | 'vintage' | 'minimal' | 'floral' | 'smiley' | 'custom_image';
   borderWidthMm: number;        // Frame or mat thickness in mm
   borderColor: string;          // Primary frame color
   innerBorderWidthMm?: number;  // Inner reveal line or accent border in mm
@@ -58,9 +58,40 @@ export interface PhotoFrameConfig {
   cornerRadiusMm?: number;      // Corner radius in mm
   shadow?: boolean;             // Realistic soft drop shadow
   shadowBlurMm?: number;        // Shadow blur radius in mm
-  texture?: 'plain' | 'wood' | 'brushed' | 'film' | 'scallop';
+  texture?: 'plain' | 'wood' | 'brushed' | 'film' | 'scallop' | 'floral' | 'smiley';
   caption?: string;             // Optional caption label on polaroid bottom
+  customImageUrl?: string;      // Custom user-uploaded frame/sticker image
 }
+
+export type PhotoFilterType =
+  | 'none'
+  | 'grayscale'
+  | 'sepia'
+  | 'warm'
+  | 'cool'
+  | 'vintage'
+  | 'vivid'
+  | 'noir'
+  | 'fade';
+
+export interface PhotoFilterDef {
+  id: PhotoFilterType;
+  name: string;
+  cssFilter: string;
+  previewColor: string;
+}
+
+export const PHOTO_FILTERS: PhotoFilterDef[] = [
+  { id: 'none', name: 'Original', cssFilter: 'none', previewColor: '#94a3b8' },
+  { id: 'grayscale', name: 'B&W Film', cssFilter: 'grayscale(100%) contrast(108%)', previewColor: '#64748b' },
+  { id: 'sepia', name: 'Warm Sepia', cssFilter: 'sepia(85%) contrast(105%) brightness(98%)', previewColor: '#b45309' },
+  { id: 'warm', name: 'Golden Hour', cssFilter: 'sepia(25%) saturate(135%) brightness(104%)', previewColor: '#f59e0b' },
+  { id: 'cool', name: 'Cool Breeze', cssFilter: 'saturate(85%) hue-rotate(15deg) contrast(105%) brightness(102%)', previewColor: '#06b6d4' },
+  { id: 'vintage', name: 'Vintage 70s', cssFilter: 'sepia(45%) contrast(118%) brightness(95%) saturate(85%)', previewColor: '#d97706' },
+  { id: 'vivid', name: 'Vivid Pop', cssFilter: 'saturate(155%) contrast(115%) brightness(102%)', previewColor: '#ef4444' },
+  { id: 'noir', name: 'Classic Noir', cssFilter: 'grayscale(100%) contrast(165%) brightness(90%)', previewColor: '#1e293b' },
+  { id: 'fade', name: 'Matte Fade', cssFilter: 'contrast(92%) brightness(112%) saturate(82%)', previewColor: '#8b5cf6' },
+];
 
 export interface PhotoPlacement {
   slotIndex: number;
@@ -70,6 +101,7 @@ export interface PhotoPlacement {
   translationY: number; // px shift inside slot
   rotation: number;     // 0, 90, 180, 270
   frameConfig?: PhotoFrameConfig;
+  filter?: PhotoFilterType;
 }
 
 export type BackgroundType = 'color' | 'gradient' | 'texture' | 'image';
@@ -89,9 +121,10 @@ export interface PageBackgroundConfig {
     angle?: number; // degrees, default 135
     stops: GradientStop[];
   };
-  texture?: 'linen' | 'paper' | 'grid' | 'dots' | 'canvas' | 'woodgrain' | 'terrazzo' | 'stripes' | 'geometric';
+  texture?: 'linen' | 'paper' | 'grid' | 'dots' | 'canvas' | 'woodgrain' | 'terrazzo' | 'stripes' | 'geometric' | 'flowers' | 'smiley' | 'hearts' | 'botanical';
   textureBaseColor?: string;
   photoId?: string;
+  customImageUrl?: string; // Direct uploaded custom background image
   photoOpacity?: number; // 0.05 to 1.0, default 0.3
   photoBlur?: number;    // px, default 0
 }
