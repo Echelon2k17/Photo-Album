@@ -3,6 +3,7 @@ import {
   Album,
   AlbumPage,
   PAGE_SIZE_CONFIGS,
+  PageBackgroundConfig,
   PageMargins,
   PageSizePreset,
   PhotoPlacement,
@@ -20,7 +21,7 @@ import {
   savePages,
   savePhoto
 } from './services/db';
-import { SAMPLE_PHOTOS } from './services/sampleData';
+import { SAMPLE_PHOTOS, createSamplePlaceholderBlob } from './services/sampleData';
 import { AlbumsListScreen } from './components/AlbumsListScreen';
 import { CreateAlbumModal } from './components/CreateAlbumModal';
 import { PhotoPickerScreen } from './components/PhotoPickerScreen';
@@ -123,7 +124,8 @@ export default function App() {
   const handleGeneratePages = async (
     layoutId: string,
     margins: PageMargins,
-    pageSizePreset: PageSizePreset
+    pageSizePreset: PageSizePreset,
+    defaultBgConfig?: PageBackgroundConfig
   ) => {
     if (!activeAlbum) return;
 
@@ -159,7 +161,8 @@ export default function App() {
         albumId: activeAlbum.id,
         pageNumber: pageNum,
         layoutId,
-        backgroundColor: '#ffffff',
+        backgroundColor: defaultBgConfig?.color || '#ffffff',
+        backgroundConfig: defaultBgConfig,
         placements,
         createdAt: Date.now() + pageNum,
         updatedAt: Date.now() + pageNum,
@@ -187,8 +190,24 @@ export default function App() {
     const alb = albums.find((a) => a.id === albumId);
     if (!alb) return;
 
-    const pgs = await getPagesForAlbum(albumId);
+    let pgs = await getPagesForAlbum(albumId);
     const pht = await getPhotosForAlbum(albumId);
+
+    // Ensure at least 1 page exists if an empty album was previously opened
+    if (pgs.length === 0) {
+      const defaultPage: AlbumPage = {
+        id: `page_${albumId}_1`,
+        albumId,
+        pageNumber: 1,
+        layoutId: alb.defaultLayoutId || 'layout-1-full',
+        backgroundColor: '#ffffff',
+        placements: [{ slotIndex: 0, photoId: pht[0]?.id || '', scale: 1.0, translationX: 0, translationY: 0, rotation: 0 }],
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      };
+      await savePages([defaultPage]);
+      pgs = [defaultPage];
+    }
 
     setActiveAlbum(alb);
     setActivePages(pgs);
@@ -280,8 +299,15 @@ export default function App() {
       const ingestedPhotos: StoredPhoto[] = [];
       for (let i = 0; i < SAMPLE_PHOTOS.length; i++) {
         const item = SAMPLE_PHOTOS[i];
-        const res = await fetch(item.url);
-        const originalBlob = await res.blob();
+        let originalBlob: Blob;
+        try {
+          const res = await fetch(item.url);
+          if (!res.ok) throw new Error('HTTP ' + res.status);
+          originalBlob = await res.blob();
+        } catch {
+          // Reliable procedural image generator fallback
+          originalBlob = createSamplePlaceholderBlob(item.name, i);
+        }
         const photoId = `demo_photo_${demoAlbumId}_${i}`;
 
         const previewResult = await createDownsampledBlob(originalBlob, 1400, 0.88);

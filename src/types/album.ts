@@ -41,6 +41,27 @@ export interface AlbumLayout {
   slots: LayoutSlot[];
 }
 
+export type FrameCategory = 'mat' | 'wood' | 'metallic' | 'vintage' | 'minimal' | 'custom';
+
+export interface PhotoFrameConfig {
+  styleId?: string;
+  category?: FrameCategory;
+  name?: string;
+  type: 'none' | 'border' | 'mat' | 'wood' | 'metallic' | 'polaroid' | 'vintage' | 'minimal';
+  borderWidthMm: number;        // Frame or mat thickness in mm
+  borderColor: string;          // Primary frame color
+  innerBorderWidthMm?: number;  // Inner reveal line or accent border in mm
+  innerBorderColor?: string;    // Accent border color
+  matColor?: string;            // Secondary matting tone
+  matWidthMm?: number;          // Additional mat margin in mm
+  bottomExtraMm?: number;       // Extra margin at bottom for Polaroid / caption
+  cornerRadiusMm?: number;      // Corner radius in mm
+  shadow?: boolean;             // Realistic soft drop shadow
+  shadowBlurMm?: number;        // Shadow blur radius in mm
+  texture?: 'plain' | 'wood' | 'brushed' | 'film' | 'scallop';
+  caption?: string;             // Optional caption label on polaroid bottom
+}
+
 export interface PhotoPlacement {
   slotIndex: number;
   photoId: string;
@@ -48,6 +69,31 @@ export interface PhotoPlacement {
   translationX: number; // px shift inside slot
   translationY: number; // px shift inside slot
   rotation: number;     // 0, 90, 180, 270
+  frameConfig?: PhotoFrameConfig;
+}
+
+export type BackgroundType = 'color' | 'gradient' | 'texture' | 'image';
+
+export interface GradientStop {
+  color: string;
+  offset: number; // 0 to 1
+}
+
+export interface PageBackgroundConfig {
+  type: BackgroundType;
+  color?: string; // hex
+  gradient?: {
+    id: string;
+    name: string;
+    type: 'linear' | 'radial';
+    angle?: number; // degrees, default 135
+    stops: GradientStop[];
+  };
+  texture?: 'linen' | 'paper' | 'grid' | 'dots' | 'canvas' | 'woodgrain' | 'terrazzo' | 'stripes' | 'geometric';
+  textureBaseColor?: string;
+  photoId?: string;
+  photoOpacity?: number; // 0.05 to 1.0, default 0.3
+  photoBlur?: number;    // px, default 0
 }
 
 export interface AlbumPage {
@@ -56,6 +102,7 @@ export interface AlbumPage {
   pageNumber: number;
   layoutId: string;
   backgroundColor: string;
+  backgroundConfig?: PageBackgroundConfig;
   placements: PhotoPlacement[]; // mapped by slotIndex
   customMargins?: PageMargins;
   createdAt: number;

@@ -9,10 +9,16 @@ import {
   Image as ImageIcon,
   LayoutGrid,
   ChevronRight,
-  Maximize2
+  Maximize2,
+  Palette,
+  Frame,
+  X
 } from 'lucide-react';
-import { AlbumLayout, AlbumPage, PhotoPlacement, StoredPhoto } from '../types/album';
+import { AlbumLayout, AlbumPage, PhotoFrameConfig, PhotoPlacement, StoredPhoto } from '../types/album';
 import { PREDEFINED_LAYOUTS, getLayoutById } from '../services/layouts';
+import { getBackgroundPreviewCss } from '../services/backgrounds';
+import { FramePickerModal } from './FramePickerModal';
+import { getFramePresetById } from '../services/frames';
 
 interface PageEditorDrawerProps {
   page: AlbumPage;
@@ -27,10 +33,17 @@ interface PageEditorDrawerProps {
       rotation: number;
     }
   ) => void;
+  onUpdatePlacementFrame: (
+    slotIndex: number,
+    frameConfig: PhotoFrameConfig,
+    scope: 'slot' | 'page' | 'album'
+  ) => void;
   onReplacePhoto: (slotIndex: number, photoId: string) => void;
   onRemovePhotoFromSlot: (slotIndex: number) => void;
   onChangePageLayout: (newLayoutId: string) => void;
+  onOpenBackgroundModal: () => void;
   onUploadNewPhoto: (files: FileList) => Promise<string | undefined>;
+  onClose?: () => void;
 }
 
 export const PageEditorDrawer: React.FC<PageEditorDrawerProps> = ({
@@ -38,13 +51,17 @@ export const PageEditorDrawer: React.FC<PageEditorDrawerProps> = ({
   activeSlotIndex,
   albumPhotos,
   onUpdatePlacement,
+  onUpdatePlacementFrame,
   onReplacePhoto,
   onRemovePhotoFromSlot,
   onChangePageLayout,
+  onOpenBackgroundModal,
   onUploadNewPhoto,
+  onClose,
 }) => {
   const [showPhotoPickerModal, setShowPhotoPickerModal] = useState(false);
   const [showLayoutPickerModal, setShowLayoutPickerModal] = useState(false);
+  const [showFramePickerModal, setShowFramePickerModal] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
 
   const currentLayout = getLayoutById(page.layoutId);
@@ -94,20 +111,31 @@ export const PageEditorDrawer: React.FC<PageEditorDrawerProps> = ({
   };
 
   return (
-    <div className="w-80 bg-white border-l border-slate-200 flex flex-col h-full text-slate-800 shadow-sm">
+    <div className="w-80 lg:w-84 max-w-full bg-white border-l border-slate-200 flex flex-col h-full text-slate-800 shadow-sm shrink-0">
       {/* Drawer Header */}
-      <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
+      <div className="px-5 py-3.5 border-b border-slate-100 flex items-center justify-between">
         <div>
-          <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">Page Inspector</span>
-          <h3 className="font-bold text-slate-900 text-base">Page {page.pageNumber}</h3>
+          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Page Inspector</span>
+          <h3 className="font-bold text-slate-900 text-sm">Page {page.pageNumber}</h3>
         </div>
-        <button
-          onClick={() => setShowLayoutPickerModal(true)}
-          className="flex items-center gap-1.5 text-xs font-medium text-blue-600 bg-blue-50 hover:bg-blue-100 px-2.5 py-1.5 rounded-md transition"
-        >
-          <LayoutGrid className="w-3.5 h-3.5" />
-          <span>Change Layout</span>
-        </button>
+        <div className="flex items-center gap-1.5">
+          <button
+            onClick={() => setShowLayoutPickerModal(true)}
+            className="flex items-center gap-1.5 text-xs font-semibold text-blue-600 bg-blue-50 hover:bg-blue-100 px-2.5 py-1.5 rounded-lg transition"
+          >
+            <LayoutGrid className="w-3.5 h-3.5" />
+            <span>Layout</span>
+          </button>
+          {onClose && (
+            <button
+              onClick={onClose}
+              title="Close Inspector (Maximize canvas)"
+              className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="flex-1 overflow-y-auto p-5 space-y-6">
@@ -225,6 +253,67 @@ export const PageEditorDrawer: React.FC<PageEditorDrawerProps> = ({
                   </div>
                 </div>
 
+                {/* Photo Frame & Matting Section */}
+                <div className="space-y-2 pt-2 border-t border-slate-100">
+                  <div className="flex items-center justify-between">
+                    <span className="font-medium text-slate-700 text-xs flex items-center gap-1.5">
+                      <Frame className="w-3.5 h-3.5 text-amber-600" />
+                      <span>Photo Frame</span>
+                    </span>
+                    <span className="text-[11px] text-slate-500 font-medium">
+                      {activePlacement?.frameConfig?.type && activePlacement.frameConfig.type !== 'none'
+                        ? activePlacement.frameConfig.name || 'Custom Frame'
+                        : 'Borderless'}
+                    </span>
+                  </div>
+
+                  {/* Quick Preset Selector Buttons */}
+                  <div className="grid grid-cols-3 gap-1.5">
+                    {[
+                      { id: 'none', label: 'None', border: '#cbd5e1' },
+                      { id: 'classic-white-mat', label: 'White Mat', border: '#e2e8f0' },
+                      { id: 'light-oak', label: 'Warm Oak', border: '#d4a373' },
+                      { id: 'luxe-gold', label: 'Luxe Gold', border: '#d4af37' },
+                      { id: 'classic-polaroid', label: 'Polaroid', border: '#cbd5e1' },
+                      { id: 'gallery-black-wood', label: 'Black Wood', border: '#1e293b' },
+                    ].map((preset) => {
+                      const isCur =
+                        (preset.id === 'none' && (!activePlacement?.frameConfig || activePlacement.frameConfig.type === 'none')) ||
+                        activePlacement?.frameConfig?.styleId === preset.id;
+                      return (
+                        <button
+                          key={preset.id}
+                          onClick={() => {
+                            if (activeSlotIndex === null) return;
+                            const fullPreset = getFramePresetById(preset.id);
+                            onUpdatePlacementFrame(activeSlotIndex, fullPreset.config, 'slot');
+                          }}
+                          className={`px-2 py-1.5 rounded-lg border text-[11px] font-medium flex items-center gap-1.5 transition ${
+                            isCur
+                              ? 'border-amber-600 bg-amber-50 text-amber-900 font-semibold ring-1 ring-amber-500/20'
+                              : 'border-slate-200 hover:border-slate-300 text-slate-700 bg-white'
+                          }`}
+                        >
+                          <span
+                            className="w-2.5 h-2.5 rounded-xs border border-slate-300 shrink-0"
+                            style={{ backgroundColor: preset.border }}
+                          />
+                          <span className="truncate">{preset.label}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {/* Button to open FramePickerModal */}
+                  <button
+                    onClick={() => setShowFramePickerModal(true)}
+                    className="w-full flex items-center justify-center gap-1.5 py-2 px-3 text-xs font-semibold text-amber-800 bg-amber-50 hover:bg-amber-100 rounded-lg border border-amber-200 transition"
+                  >
+                    <Frame className="w-3.5 h-3.5 text-amber-700" />
+                    <span>Browse All Frames & Fine-Tune...</span>
+                  </button>
+                </div>
+
                 {/* Move / Pan Instructions */}
                 <div className="p-3 bg-slate-50 rounded-lg border border-slate-100 text-xs text-slate-600 space-y-1">
                   <div className="flex items-center gap-1.5 font-medium text-slate-800">
@@ -264,6 +353,69 @@ export const PageEditorDrawer: React.FC<PageEditorDrawerProps> = ({
               className="text-xs text-blue-600 font-medium hover:underline flex items-center"
             >
               Change <ChevronRight className="w-3 h-3" />
+            </button>
+          </div>
+        </div>
+
+        {/* Page Background Overview */}
+        <div className="pt-3 border-t border-slate-100 space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-slate-600 uppercase tracking-wider">Page Background</span>
+            <span className="text-xs text-slate-500 capitalize">
+              {page.backgroundConfig?.type || 'Solid Color'}
+            </span>
+          </div>
+          <div className="p-3 bg-slate-50 rounded-lg border border-slate-200/60 flex items-center justify-between">
+            <div className="flex items-center gap-2.5">
+              <div
+                className="w-7 h-7 rounded-md border border-slate-300 shadow-2xs"
+                style={{ background: getBackgroundPreviewCss(page.backgroundConfig, page.backgroundColor) }}
+              />
+              <div className="min-w-0">
+                <p className="text-xs font-semibold text-slate-900">
+                  {page.backgroundConfig?.type === 'gradient'
+                    ? page.backgroundConfig.gradient?.name || 'Custom Gradient'
+                    : page.backgroundConfig?.type === 'texture'
+                    ? `Texture: ${page.backgroundConfig.texture}`
+                    : page.backgroundConfig?.type === 'image'
+                    ? 'Photo Watermark'
+                    : page.backgroundColor || '#ffffff'}
+                </p>
+                <p className="text-[11px] text-slate-400">Current page backdrop</p>
+              </div>
+            </div>
+            <button
+              onClick={onOpenBackgroundModal}
+              className="text-xs text-blue-600 font-medium hover:underline flex items-center gap-1"
+            >
+              <Palette className="w-3.5 h-3.5" />
+              <span>Edit</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Page Photo Frames Overview */}
+        <div className="pt-3 border-t border-slate-100 space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-slate-600 uppercase tracking-wider">Photo Frames</span>
+            <span className="text-xs text-slate-500">Page & Album</span>
+          </div>
+          <div className="p-3 bg-slate-50 rounded-lg border border-slate-200/60 flex items-center justify-between">
+            <div className="flex items-center gap-2.5">
+              <div className="w-7 h-7 rounded-md bg-amber-100 text-amber-700 flex items-center justify-center">
+                <Frame className="w-3.5 h-3.5" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-xs font-semibold text-slate-900">Photo Frames & Mats</p>
+                <p className="text-[11px] text-slate-400">Choose frame presets or custom styles</p>
+              </div>
+            </div>
+            <button
+              onClick={() => setShowFramePickerModal(true)}
+              className="text-xs text-amber-700 font-medium hover:underline flex items-center gap-1"
+            >
+              <Frame className="w-3.5 h-3.5" />
+              <span>Browse</span>
             </button>
           </div>
         </div>
@@ -409,6 +561,18 @@ export const PageEditorDrawer: React.FC<PageEditorDrawerProps> = ({
             </div>
           </div>
         </div>
+      )}
+
+      {/* MODAL: Frame Picker & Fine-Tuning */}
+      {showFramePickerModal && (
+        <FramePickerModal
+          currentFrameConfig={activePlacement?.frameConfig}
+          photo={currentPhoto}
+          onApply={(cfg, scope) => {
+            onUpdatePlacementFrame(activeSlotIndex ?? 0, cfg, scope);
+          }}
+          onClose={() => setShowFramePickerModal(false)}
+        />
       )}
     </div>
   );

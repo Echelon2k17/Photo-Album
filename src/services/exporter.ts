@@ -101,7 +101,10 @@ export async function exportAlbum(
       });
 
       // 1. Fetch only original images needed for this specific page
-      const requiredPhotoIds = Array.from(new Set(page.placements.map((p) => p.photoId).filter(Boolean)));
+      const placementIds = page.placements.map((p) => p.photoId).filter(Boolean);
+      const bgPhotoId = page.backgroundConfig?.type === 'image' ? page.backgroundConfig.photoId : undefined;
+      const allPhotoIds = bgPhotoId ? [...placementIds, bgPhotoId] : placementIds;
+      const requiredPhotoIds = Array.from(new Set(allPhotoIds));
       const photosMap = new Map<string, RenderPhotoSource>();
 
       for (const photoId of requiredPhotoIds) {
@@ -115,6 +118,7 @@ export async function exportAlbum(
 
       renderAlbumPage(ctx, widthPx, heightPx, pageDims, margins, layout, page.placements, photosMap, {
         backgroundColor: page.backgroundColor || '#ffffff',
+        backgroundConfig: page.backgroundConfig,
         pageNumber: pageNum,
         showPageNumber: settings.includePageNumbers,
         isExport: true,
@@ -178,7 +182,10 @@ export async function exportAlbum(
       });
 
       // Load original images for this page only
-      const requiredPhotoIds = Array.from(new Set(page.placements.map((p) => p.photoId).filter(Boolean)));
+      const placementIds = page.placements.map((p) => p.photoId).filter(Boolean);
+      const bgPhotoId = page.backgroundConfig?.type === 'image' ? page.backgroundConfig.photoId : undefined;
+      const allPhotoIds = bgPhotoId ? [...placementIds, bgPhotoId] : placementIds;
+      const requiredPhotoIds = Array.from(new Set(allPhotoIds));
       const photosMap = new Map<string, RenderPhotoSource>();
 
       for (const photoId of requiredPhotoIds) {
@@ -191,6 +198,7 @@ export async function exportAlbum(
 
       renderAlbumPage(ctx, widthPx, heightPx, pageDims, margins, layout, page.placements, photosMap, {
         backgroundColor: page.backgroundColor || '#ffffff',
+        backgroundConfig: page.backgroundConfig,
         pageNumber: pageNum,
         showPageNumber: settings.includePageNumbers,
         isExport: true,

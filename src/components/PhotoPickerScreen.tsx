@@ -11,7 +11,7 @@ import {
   FileImage
 } from 'lucide-react';
 import { StoredPhoto } from '../types/album';
-import { SAMPLE_PHOTOS } from '../services/sampleData';
+import { SAMPLE_PHOTOS, createSamplePlaceholderBlob } from '../services/sampleData';
 import { createDownsampledBlob, getObjectUrlForBlob, savePhoto } from '../services/db';
 
 interface PhotoPickerScreenProps {
@@ -111,8 +111,14 @@ export const PhotoPickerScreen: React.FC<PhotoPickerScreenProps> = ({
       setStatusMessage(`Loading high-res sample ${i + 1} of ${SAMPLE_PHOTOS.length}: ${sample.name}`);
 
       try {
-        const response = await fetch(sample.url);
-        const originalBlob = await response.blob();
+        let originalBlob: Blob;
+        try {
+          const response = await fetch(sample.url);
+          if (!response.ok) throw new Error('HTTP ' + response.status);
+          originalBlob = await response.blob();
+        } catch {
+          originalBlob = createSamplePlaceholderBlob(sample.name, i);
+        }
         const photoId = 'photo_sample_' + Date.now() + '_' + i;
 
         const previewResult = await createDownsampledBlob(originalBlob, 1400, 0.88);

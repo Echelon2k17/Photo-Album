@@ -108,11 +108,40 @@ export async function createDownsampledBlob(
 
     img.onerror = () => {
       URL.revokeObjectURL(url);
-      reject(new Error('Failed to decode image file'));
+      // Fallback safely to original blob to prevent unhandled rejection
+      resolve({
+        blob: originalBlob,
+        width: 1200,
+        height: 800,
+        originalWidth: 1200,
+        originalHeight: 800,
+      });
     };
 
     img.src = url;
   });
+}
+
+// Ensure loaded photos have active, valid object URLs after browser reload
+export function ensurePhotoUrls(photo: StoredPhoto): StoredPhoto {
+  if (!photo) return photo;
+  let previewUrl = photo.previewUrl;
+  let thumbnailUrl = photo.thumbnailUrl;
+
+  if (photo.originalBlob) {
+    if (!previewUrl || (previewUrl.startsWith('blob:') && !objectUrlCache.has(photo.id + '_preview'))) {
+      previewUrl = getObjectUrlForBlob(photo.id + '_preview', photo.originalBlob);
+    }
+    if (!thumbnailUrl || (thumbnailUrl.startsWith('blob:') && !objectUrlCache.has(photo.id + '_thumb'))) {
+      thumbnailUrl = getObjectUrlForBlob(photo.id + '_thumb', photo.originalBlob);
+    }
+  }
+
+  return {
+    ...photo,
+    previewUrl,
+    thumbnailUrl,
+  };
 }
 
 // ---------------- ALBUMS ----------------
@@ -211,7 +240,7 @@ export async function getPhotosForAlbum(albumId: string): Promise<StoredPhoto[]>
     req.onsuccess = () => {
       const photos = (req.result || []) as StoredPhoto[];
       photos.sort((a, b) => a.createdAt - b.createdAt);
-      resolve(photos);
+      resolve(photos.map(ensurePhotoUrls));
     };
     req.onerror = () => reject(req.error);
   });
@@ -223,7 +252,10 @@ export async function getPhotoById(photoId: string): Promise<StoredPhoto | null>
     const tx = db.transaction('photos', 'readonly');
     const store = tx.objectStore('photos');
     const req = store.get(photoId);
-    req.onsuccess = () => resolve((req.result as StoredPhoto) || null);
+    req.onsuccess = () => {
+      const photo = (req.result as StoredPhoto) || null;
+      resolve(photo ? ensurePhotoUrls(photo) : null);
+    };
     req.onerror = () => reject(req.error);
   });
 }

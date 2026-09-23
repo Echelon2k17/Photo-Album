@@ -87,7 +87,7 @@ export const AlbumPreviewScreen: React.FC<AlbumPreviewScreenProps> = ({
         </button>
 
         {/* Page Render Canvas */}
-        <div className="max-w-4xl max-h-[78vh] flex items-center justify-center shadow-2xl">
+        <div className="max-w-5xl max-h-[80vh] flex items-center justify-center shadow-2xl">
           <PageCanvas
             album={album}
             page={currentPage}
@@ -96,8 +96,8 @@ export const AlbumPreviewScreen: React.FC<AlbumPreviewScreenProps> = ({
             onUpdatePlacement={() => {}}
             showMarginGuides={false}
             interactive={false}
-            maxWidth={980}
-            maxHeight={680}
+            maxWidth={typeof window !== 'undefined' ? Math.max(300, Math.min(1080, window.innerWidth - 180)) : 980}
+            maxHeight={typeof window !== 'undefined' ? Math.max(220, Math.min(760, window.innerHeight - 220)) : 680}
           />
         </div>
 

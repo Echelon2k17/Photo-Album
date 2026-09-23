@@ -13,10 +13,21 @@ import {
   ArrowLeft,
   Image as ImageIcon,
   Check,
-  Edit2
+  Edit2,
+  Palette,
+  Frame,
+  ZoomIn,
+  ZoomOut,
+  Maximize2,
+  PanelRightClose,
+  PanelRightOpen,
+  ChevronUp,
+  ChevronDown,
+  Film
 } from 'lucide-react';
-import { Album, AlbumPage, PageMargins, PageSizePreset, PhotoPlacement, StoredPhoto } from '../types/album';
+import { Album, AlbumPage, PageBackgroundConfig, PageMargins, PageSizePreset, PhotoFrameConfig, PhotoPlacement, StoredPhoto } from '../types/album';
 import { getLayoutById } from '../services/layouts';
+import { getBackgroundPreviewCss } from '../services/backgrounds';
 import {
   createDownsampledBlob,
   deleteSinglePage,
@@ -29,6 +40,8 @@ import {
 import { PageCanvas } from './PageCanvas';
 import { PageEditorDrawer } from './PageEditorDrawer';
 import { MarginsModal } from './MarginsModal';
+import { BackgroundModal } from './BackgroundModal';
+import { FramePickerModal } from './FramePickerModal';
 import { AlbumPreviewScreen } from './AlbumPreviewScreen';
 import { ExportModal } from './ExportModal';
 
@@ -48,7 +61,21 @@ export const AlbumEditorScreen: React.FC<AlbumEditorScreenProps> = ({
   onPhotosUpdated,
 }) => {
   const [album, setAlbum] = useState<Album>(initialAlbum);
-  const [pages, setPages] = useState<AlbumPage[]>(initialPages);
+  const [pages, setPages] = useState<AlbumPage[]>(() => {
+    if (initialPages && initialPages.length > 0) return initialPages;
+    return [
+      {
+        id: `page_${initialAlbum.id}_1`,
+        albumId: initialAlbum.id,
+        pageNumber: 1,
+        layoutId: initialAlbum.defaultLayoutId || 'layout-1-full',
+        backgroundColor: '#ffffff',
+        placements: [{ slotIndex: 0, photoId: '', scale: 1.0, translationX: 0, translationY: 0, rotation: 0 }],
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      },
+    ];
+  });
   const [photos, setPhotos] = useState<StoredPhoto[]>(initialPhotos);
 
   const [activePageIndex, setActivePageIndex] = useState<number>(0);
@@ -56,8 +83,63 @@ export const AlbumEditorScreen: React.FC<AlbumEditorScreenProps> = ({
 
   // Modals state
   const [showMarginsModal, setShowMarginsModal] = useState<boolean>(false);
+  const [showBackgroundModal, setShowBackgroundModal] = useState<boolean>(false);
+  const [showFrameModal, setShowFrameModal] = useState<boolean>(false);
   const [showPreviewModal, setShowPreviewModal] = useState<boolean>(false);
   const [showExportModal, setShowExportModal] = useState<boolean>(false);
+
+  // Responsive Workspace & Zoom state
+  const canvasContainerRef = useRef<HTMLDivElement | null>(null);
+  const [containerSize, setContainerSize] = useState<{ width: number; height: number }>({
+    width: 900,
+    height: 550,
+  });
+  const [zoomLevel, setZoomLevel] = useState<number | 'fit'>('fit');
+  const [isDrawerOpen, setIsDrawerOpen] = useState<boolean>(() =>
+    typeof window !== 'undefined' ? window.innerWidth >= 1024 : true
+  );
+  const [showThumbnails, setShowThumbnails] = useState<boolean>(true);
+
+  // Auto-measure canvas container on mount & resize with RAF protection
+  useEffect(() => {
+    const el = canvasContainerRef.current;
+    if (!el) return;
+
+    let rafId: number | null = null;
+    const updateSize = () => {
+      if (!canvasContainerRef.current) return;
+      const rect = canvasContainerRef.current.getBoundingClientRect();
+      if (rect.width > 0 && rect.height > 0) {
+        const newW = Math.floor(rect.width);
+        const newH = Math.floor(rect.height);
+        setContainerSize((prev) => {
+          if (Math.abs(prev.width - newW) <= 2 && Math.abs(prev.height - newH) <= 2) {
+            return prev;
+          }
+          return { width: newW, height: newH };
+        });
+      }
+    };
+
+    updateSize();
+    const ro = new ResizeObserver(() => {
+      if (rafId) cancelAnimationFrame(rafId);
+      rafId = requestAnimationFrame(updateSize);
+    });
+    ro.observe(el);
+
+    const handleWindowResize = () => {
+      if (rafId) cancelAnimationFrame(rafId);
+      rafId = requestAnimationFrame(updateSize);
+    };
+
+    window.addEventListener('resize', handleWindowResize);
+    return () => {
+      if (rafId) cancelAnimationFrame(rafId);
+      ro.disconnect();
+      window.removeEventListener('resize', handleWindowResize);
+    };
+  }, []);
 
   // Inline album renaming
   const [isRenaming, setIsRenaming] = useState(false);
@@ -106,6 +188,29 @@ export const AlbumEditorScreen: React.FC<AlbumEditorScreenProps> = ({
     }
   };
 
+  // Zoom handlers
+  const handleZoomOut = () => {
+    if (zoomLevel === 'fit') {
+      setZoomLevel(0.75);
+    } else {
+      const steps = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0];
+      const cur = steps.findIndex((s) => s >= zoomLevel);
+      const next = Math.max(0, (cur === -1 ? 2 : cur) - 1);
+      setZoomLevel(steps[next]);
+    }
+  };
+
+  const handleZoomIn = () => {
+    if (zoomLevel === 'fit') {
+      setZoomLevel(1.25);
+    } else {
+      const steps = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0];
+      const cur = steps.findIndex((s) => s >= zoomLevel);
+      const next = Math.min(steps.length - 1, (cur === -1 ? 2 : cur) + 1);
+      setZoomLevel(steps[next]);
+    }
+  };
+
   // ---------------- PAGE MANIPULATION ----------------
   const handleUpdatePlacement = (
     slotIndex: number,
@@ -114,7 +219,8 @@ export const AlbumEditorScreen: React.FC<AlbumEditorScreenProps> = ({
       translationX: number;
       translationY: number;
       rotation: number;
-    }
+    },
+    options?: { skipHistory?: boolean }
   ) => {
     if (!activePage) return;
 
@@ -162,7 +268,16 @@ export const AlbumEditorScreen: React.FC<AlbumEditorScreenProps> = ({
       };
     });
 
-    recordHistoryAndSave(newPages);
+    if (options?.skipHistory) {
+      // Lightweight direct state update while dragging (60fps buttery responsiveness)
+      setPages(newPages);
+    } else {
+      recordHistoryAndSave(newPages);
+    }
+  };
+
+  const handleCommitPlacementHistory = () => {
+    recordHistoryAndSave(pages);
   };
 
   const handleReplacePhoto = (slotIndex: number, photoId: string) => {
@@ -219,6 +334,66 @@ export const AlbumEditorScreen: React.FC<AlbumEditorScreenProps> = ({
     recordHistoryAndSave(newPages);
   };
 
+  const handleUpdateFrameConfig = (
+    slotIndex: number,
+    frameConfig: PhotoFrameConfig,
+    scope: 'slot' | 'page' | 'album'
+  ) => {
+    let newPages: AlbumPage[];
+    if (scope === 'album') {
+      newPages = pages.map((p) => ({
+        ...p,
+        placements: p.placements.map((pl) => ({
+          ...pl,
+          frameConfig: { ...frameConfig },
+        })),
+        updatedAt: Date.now(),
+      }));
+    } else if (scope === 'page') {
+      newPages = pages.map((p, idx) => {
+        if (idx !== activePageIndex) return p;
+        return {
+          ...p,
+          placements: p.placements.map((pl) => ({
+            ...pl,
+            frameConfig: { ...frameConfig },
+          })),
+          updatedAt: Date.now(),
+        };
+      });
+    } else {
+      // slot only
+      newPages = pages.map((p, idx) => {
+        if (idx !== activePageIndex) return p;
+        const existing = [...p.placements];
+        const pIdx = existing.findIndex((pl) => pl.slotIndex === slotIndex);
+        if (pIdx >= 0) {
+          existing[pIdx] = {
+            ...existing[pIdx],
+            frameConfig: { ...frameConfig },
+          };
+        } else {
+          existing.push({
+            slotIndex,
+            photoId: '',
+            scale: 1.0,
+            translationX: 0,
+            translationY: 0,
+            rotation: 0,
+            frameConfig: { ...frameConfig },
+          });
+        }
+        return {
+          ...p,
+          placements: existing,
+          updatedAt: Date.now(),
+        };
+      });
+    }
+
+    recordHistoryAndSave(newPages);
+  };
+
   // Change Layout of THIS single page only
   const handleChangePageLayout = (newLayoutId: string) => {
     if (!activePage) return;
@@ -242,7 +417,8 @@ export const AlbumEditorScreen: React.FC<AlbumEditorScreenProps> = ({
       albumId: album.id,
       pageNumber: pages.length + 1,
       layoutId: album.defaultLayoutId,
-      backgroundColor: '#ffffff',
+      backgroundColor: activePage?.backgroundColor || '#ffffff',
+      backgroundConfig: activePage?.backgroundConfig,
       placements: [],
       createdAt: Date.now(),
       updatedAt: Date.now(),
@@ -375,6 +551,23 @@ export const AlbumEditorScreen: React.FC<AlbumEditorScreenProps> = ({
     saveAlbum(updated);
   };
 
+  // Apply Background (to current page or all pages)
+  const handleApplyBackground = (bgConfig: PageBackgroundConfig, applyToAll: boolean) => {
+    const newPages = pages.map((p, idx) => {
+      if (applyToAll || idx === activePageIndex) {
+        return {
+          ...p,
+          backgroundColor: bgConfig.color || '#ffffff',
+          backgroundConfig: bgConfig,
+          updatedAt: Date.now(),
+        };
+      }
+      return p;
+    });
+
+    recordHistoryAndSave(newPages);
+  };
+
   return (
     <div className="h-screen flex flex-col bg-slate-100 text-slate-800 select-none overflow-hidden">
       {/* 1. TOP STUDIO TOOLBAR */}
@@ -445,14 +638,47 @@ export const AlbumEditorScreen: React.FC<AlbumEditorScreenProps> = ({
           </button>
         </div>
 
-        {/* Right: Margins, Preview, Export */}
+        {/* Right: Background, Frames, Margins, Preview, Export */}
         <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowBackgroundModal(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg transition"
+          >
+            <Palette className="w-3.5 h-3.5 text-blue-600" />
+            <span className="hidden sm:inline">Background</span>
+          </button>
+
+          <button
+            onClick={() => setShowFrameModal(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg transition"
+          >
+            <Frame className="w-3.5 h-3.5 text-amber-600" />
+            <span className="hidden sm:inline">Frames</span>
+          </button>
+
           <button
             onClick={() => setShowMarginsModal(true)}
             className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg transition"
           >
             <Sliders className="w-3.5 h-3.5 text-slate-500" />
             <span className="hidden sm:inline">Margins & Size</span>
+          </button>
+
+          <button
+            onClick={() => setIsDrawerOpen(!isDrawerOpen)}
+            title={isDrawerOpen ? 'Hide Inspector (Wide Canvas)' : 'Show Inspector'}
+            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg border transition ${
+              isDrawerOpen
+                ? 'bg-blue-50 text-blue-700 border-blue-200 shadow-2xs'
+                : 'bg-white text-slate-700 hover:bg-slate-50 border-slate-200'
+            }`}
+          >
+            {isDrawerOpen ? (
+              <PanelRightClose className="w-3.5 h-3.5 text-blue-600" />
+            ) : (
+              <PanelRightOpen className="w-3.5 h-3.5 text-slate-500" />
+            )}
+            <span className="hidden md:inline">Inspector</span>
           </button>
 
           <button
@@ -474,75 +700,173 @@ export const AlbumEditorScreen: React.FC<AlbumEditorScreenProps> = ({
       </header>
 
       {/* 2. MAIN WORKSPACE (Canvas + Inspector Drawer) */}
-      <div className="flex-1 flex overflow-hidden">
-        {/* Central Canvas Area */}
-        <main className="flex-1 flex flex-col bg-slate-100 relative overflow-hidden">
-          {/* Quick Page Info Strip */}
-          <div className="px-6 py-2 flex items-center justify-between text-xs text-slate-500 border-b border-slate-200/60 bg-white/60 backdrop-blur-xs">
-            <div className="flex items-center gap-2">
-              <span className="font-bold text-slate-800">Page {activePage?.pageNumber || 1}</span>
-              <span>•</span>
-              <span>{getLayoutById(activePage?.layoutId || '').name}</span>
-            </div>
+      {(() => {
+        // Dynamic fitted dimensions calculation based on actual measured container size
+        const padH = 40;
+        const padV = 40;
+        const availableW = Math.max(260, containerSize.width - padH);
+        const availableH = Math.max(180, containerSize.height - padV);
 
-            {/* Quick page actions */}
-            <div className="flex items-center gap-2">
-              <button
-                onClick={handleDuplicatePage}
-                title="Duplicate Page"
-                className="p-1 text-slate-500 hover:text-slate-800 hover:bg-slate-200/60 rounded"
-              >
-                <Copy className="w-3.5 h-3.5" />
-              </button>
-              <button
-                onClick={handleDeletePage}
-                disabled={pages.length <= 1}
-                title="Delete Page"
-                className="p-1 text-slate-500 hover:text-red-600 hover:bg-red-50 rounded disabled:opacity-30"
-              >
-                <Trash2 className="w-3.5 h-3.5" />
-              </button>
-            </div>
-          </div>
+        const zoomFactor = zoomLevel === 'fit' ? 1.0 : zoomLevel;
+        const canvasMaxWidth = Math.round(availableW * zoomFactor);
+        const canvasMaxHeight = Math.round(availableH * zoomFactor);
 
-          {/* Interactive Canvas */}
-          <div className="flex-1 flex items-center justify-center p-6 overflow-auto">
-            {activePage && (
-              <PageCanvas
-                album={album}
+        return (
+          <div className="flex-1 flex overflow-hidden relative">
+            {/* Central Canvas Area */}
+            <main className="flex-1 flex flex-col bg-slate-100/90 relative overflow-hidden">
+              {/* Quick Page Info Strip */}
+              <div className="px-5 py-2 flex items-center justify-between text-xs text-slate-500 border-b border-slate-200/60 bg-white/70 backdrop-blur-xs">
+                <div className="flex items-center gap-2">
+                  <span className="font-bold text-slate-800">Page {activePage?.pageNumber || 1}</span>
+                  <span>•</span>
+                  <span>{getLayoutById(activePage?.layoutId || '').name}</span>
+                </div>
+
+                {/* Quick page actions */}
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={handleDuplicatePage}
+                    title="Duplicate Page"
+                    className="p-1 text-slate-500 hover:text-slate-800 hover:bg-slate-200/60 rounded"
+                  >
+                    <Copy className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    onClick={handleDeletePage}
+                    disabled={pages.length <= 1}
+                    title="Delete Page"
+                    className="p-1 text-slate-500 hover:text-red-600 hover:bg-red-50 rounded disabled:opacity-30"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+
+              {/* Interactive Canvas Container with Auto-Fit & Responsive Scaling */}
+              <div
+                ref={canvasContainerRef}
+                className="flex-1 relative flex items-center justify-center p-3 sm:p-5 overflow-auto min-h-0 min-w-0"
+              >
+                {activePage && (
+                  <PageCanvas
+                    album={album}
+                    page={activePage}
+                    activeSlotIndex={activeSlotIndex}
+                    onSelectSlot={setActiveSlotIndex}
+                    onUpdatePlacement={handleUpdatePlacement}
+                    onCommitPlacementHistory={handleCommitPlacementHistory}
+                    onEmptySlotClick={(slotIdx) => {
+                      setActiveSlotIndex(slotIdx);
+                      if (window.innerWidth >= 1024) setIsDrawerOpen(true);
+                    }}
+                    onOpenFramePicker={() => setShowFrameModal(true)}
+                    onRemovePhoto={handleRemovePhotoFromSlot}
+                    showMarginGuides={true}
+                    interactive={true}
+                    maxWidth={canvasMaxWidth}
+                    maxHeight={canvasMaxHeight}
+                  />
+                )}
+
+                {/* Floating Studio Viewport Controls */}
+                <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-30 flex items-center gap-1.5 bg-slate-900/90 text-white px-3 py-1.5 rounded-full shadow-2xl border border-slate-700/80 backdrop-blur-md text-xs select-none">
+                  {/* Zoom Out */}
+                  <button
+                    onClick={handleZoomOut}
+                    disabled={zoomLevel === 0.5}
+                    title="Zoom Out Canvas"
+                    className="p-1 hover:bg-slate-800 rounded-full text-slate-300 hover:text-white transition disabled:opacity-30"
+                  >
+                    <ZoomOut className="w-3.5 h-3.5" />
+                  </button>
+
+                  {/* Fit Button */}
+                  <button
+                    onClick={() => setZoomLevel('fit')}
+                    title="Fit Page to Screen (Auto)"
+                    className={`px-2 py-0.5 rounded-full font-mono text-[11px] transition ${
+                      zoomLevel === 'fit'
+                        ? 'bg-blue-600 text-white font-bold'
+                        : 'text-slate-300 hover:text-white hover:bg-slate-800'
+                    }`}
+                  >
+                    Fit
+                  </button>
+
+                  <span className="text-[11px] font-mono text-slate-400 min-w-[36px] text-center">
+                    {zoomLevel === 'fit' ? '100%' : `${Math.round(zoomLevel * 100)}%`}
+                  </span>
+
+                  {/* Zoom In */}
+                  <button
+                    onClick={handleZoomIn}
+                    disabled={zoomLevel === 2.0}
+                    title="Zoom In Canvas"
+                    className="p-1 hover:bg-slate-800 rounded-full text-slate-300 hover:text-white transition disabled:opacity-30"
+                  >
+                    <ZoomIn className="w-3.5 h-3.5" />
+                  </button>
+
+                  <span className="w-px h-3.5 bg-slate-700 mx-1" />
+
+                  {/* Toggle Inspector Drawer */}
+                  <button
+                    onClick={() => setIsDrawerOpen(!isDrawerOpen)}
+                    title={isDrawerOpen ? 'Collapse Inspector (Wide Canvas)' : 'Open Inspector'}
+                    className={`flex items-center gap-1 px-2 py-0.5 rounded-full transition text-[11px] font-medium ${
+                      isDrawerOpen ? 'bg-slate-800 text-blue-400' : 'text-slate-300 hover:text-white hover:bg-slate-800'
+                    }`}
+                  >
+                    {isDrawerOpen ? <PanelRightClose className="w-3 h-3" /> : <PanelRightOpen className="w-3 h-3" />}
+                    <span className="hidden sm:inline">Inspector</span>
+                  </button>
+
+                  {/* Toggle Filmstrip */}
+                  <button
+                    onClick={() => setShowThumbnails(!showThumbnails)}
+                    title={showThumbnails ? 'Collapse Page Filmstrip (More Height)' : 'Expand Page Filmstrip'}
+                    className={`flex items-center gap-1 px-2 py-0.5 rounded-full transition text-[11px] font-medium ${
+                      !showThumbnails ? 'bg-slate-800 text-amber-400' : 'text-slate-300 hover:text-white hover:bg-slate-800'
+                    }`}
+                  >
+                    <Film className="w-3 h-3" />
+                    <span className="hidden sm:inline">Pages</span>
+                  </button>
+                </div>
+              </div>
+            </main>
+
+            {/* Right Drawer: Slot Inspector, Zoom Slider, Rotation, Replace Photo */}
+            {activePage && isDrawerOpen && (
+              <PageEditorDrawer
                 page={activePage}
                 activeSlotIndex={activeSlotIndex}
-                onSelectSlot={setActiveSlotIndex}
+                albumPhotos={photos}
                 onUpdatePlacement={handleUpdatePlacement}
-                onEmptySlotClick={(slotIdx) => {
-                  setActiveSlotIndex(slotIdx);
-                }}
-                showMarginGuides={true}
-                interactive={true}
-                maxWidth={880}
-                maxHeight={600}
+                onUpdatePlacementFrame={handleUpdateFrameConfig}
+                onReplacePhoto={handleReplacePhoto}
+                onRemovePhotoFromSlot={handleRemovePhotoFromSlot}
+                onChangePageLayout={handleChangePageLayout}
+                onOpenBackgroundModal={() => setShowBackgroundModal(true)}
+                onUploadNewPhoto={handleUploadPhoto}
+                onClose={() => setIsDrawerOpen(false)}
               />
             )}
           </div>
-        </main>
-
-        {/* Right Drawer: Slot Inspector, Zoom Slider, Rotation, Replace Photo */}
-        {activePage && (
-          <PageEditorDrawer
-            page={activePage}
-            activeSlotIndex={activeSlotIndex}
-            albumPhotos={photos}
-            onUpdatePlacement={handleUpdatePlacement}
-            onReplacePhoto={handleReplacePhoto}
-            onRemovePhotoFromSlot={handleRemovePhotoFromSlot}
-            onChangePageLayout={handleChangePageLayout}
-            onUploadNewPhoto={handleUploadPhoto}
-          />
-        )}
-      </div>
+        );
+      })()}
 
       {/* 3. BOTTOM THUMBNAIL STRIP & PAGE REORDERING */}
-      <footer className="h-28 bg-white border-t border-slate-200 px-5 flex items-center gap-3 overflow-x-auto z-10 shadow-lg">
+      {showThumbnails ? (
+        <footer className="h-28 bg-white border-t border-slate-200 px-5 flex items-center gap-3 overflow-x-auto z-10 shadow-lg relative shrink-0">
+          <button
+            onClick={() => setShowThumbnails(false)}
+            title="Minimize filmstrip for more editing space"
+            className="absolute top-1.5 right-2 p-1 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded z-10 transition"
+          >
+            <ChevronDown className="w-3.5 h-3.5" />
+          </button>
         {/* Page thumbnails */}
         {pages.map((p, idx) => {
           const isSelected = idx === activePageIndex;
@@ -562,8 +886,11 @@ export const AlbumEditorScreen: React.FC<AlbumEditorScreenProps> = ({
                   : 'border-slate-200 hover:border-slate-300 bg-slate-50'
               }`}
             >
-              {/* Micro layout preview */}
-              <div className="w-24 h-16 bg-white rounded border border-slate-200 relative overflow-hidden flex items-center justify-center shadow-2xs">
+              {/* Micro layout preview with custom background representation */}
+              <div
+                className="w-24 h-16 rounded border border-slate-200 relative overflow-hidden flex items-center justify-center shadow-2xs"
+                style={{ background: getBackgroundPreviewCss(p.backgroundConfig, p.backgroundColor) }}
+              >
                 {layout.slots.map((s, sIdx) => {
                   const pl = p.placements.find((item) => item.slotIndex === sIdx);
                   const photo = pl?.photoId ? photos.find((ph) => ph.id === pl.photoId) : null;
@@ -634,8 +961,101 @@ export const AlbumEditorScreen: React.FC<AlbumEditorScreenProps> = ({
           <span className="text-[11px] font-bold">+ Add Page</span>
         </button>
       </footer>
+    ) : (
+      <footer className="h-10 bg-white border-t border-slate-200 px-4 flex items-center justify-between z-10 shadow-2xs shrink-0 text-xs text-slate-600">
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setActivePageIndex((prev) => Math.max(0, prev - 1))}
+            disabled={activePageIndex === 0}
+            title="Previous Page"
+            className="p-1 hover:bg-slate-100 rounded disabled:opacity-30"
+          >
+            <ChevronLeft className="w-3.5 h-3.5" />
+          </button>
+          <span className="font-semibold text-slate-800">
+            Page {activePageIndex + 1} of {pages.length}
+          </span>
+          <button
+            onClick={() => setActivePageIndex((prev) => Math.min(pages.length - 1, prev + 1))}
+            disabled={activePageIndex === pages.length - 1}
+            title="Next Page"
+            className="p-1 hover:bg-slate-100 rounded disabled:opacity-30"
+          >
+            <ChevronRight className="w-3.5 h-3.5" />
+          </button>
+        </div>
+
+        <div className="flex items-center gap-1.5 overflow-x-auto max-w-md py-1">
+          {pages.map((p, idx) => (
+            <button
+              key={p.id}
+              onClick={() => {
+                setActivePageIndex(idx);
+                setActiveSlotIndex(null);
+              }}
+              className={`w-6 h-6 rounded-md text-[11px] font-bold transition ${
+                idx === activePageIndex
+                  ? 'bg-blue-600 text-white shadow-xs'
+                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+              }`}
+            >
+              {p.pageNumber}
+            </button>
+          ))}
+          <button
+            onClick={handleAddPage}
+            title="Add Page"
+            className="w-6 h-6 rounded-md border border-dashed border-slate-300 hover:border-blue-500 text-slate-500 hover:text-blue-600 flex items-center justify-center transition"
+          >
+            <Plus className="w-3 h-3" />
+          </button>
+        </div>
+
+        <button
+          onClick={() => setShowThumbnails(true)}
+          className="flex items-center gap-1 text-xs font-semibold text-blue-600 hover:text-blue-700 px-2 py-1 rounded hover:bg-blue-50 transition"
+        >
+          <Film className="w-3.5 h-3.5" />
+          <span>Show Thumbnails</span>
+          <ChevronUp className="w-3.5 h-3.5" />
+        </button>
+      </footer>
+    )}
 
       {/* MODALS */}
+      {showBackgroundModal && activePage && (
+        <BackgroundModal
+          currentPage={activePage}
+          totalPagesCount={pages.length}
+          albumPhotos={photos}
+          onApply={handleApplyBackground}
+          onClose={() => setShowBackgroundModal(false)}
+        />
+      )}
+
+      {showFrameModal && (
+        <FramePickerModal
+          currentFrameConfig={
+            activeSlotIndex !== null
+              ? activePage?.placements.find((p) => p.slotIndex === activeSlotIndex)?.frameConfig
+              : undefined
+          }
+          photo={
+            activeSlotIndex !== null
+              ? photos.find(
+                  (ph) =>
+                    ph.id ===
+                    activePage?.placements.find((p) => p.slotIndex === activeSlotIndex)?.photoId
+                )
+              : photos[0] || null
+          }
+          onApply={(cfg, scope) => {
+            handleUpdateFrameConfig(activeSlotIndex ?? 0, cfg, scope);
+          }}
+          onClose={() => setShowFrameModal(false)}
+        />
+      )}
+
       {showMarginsModal && (
         <MarginsModal
           album={album}
