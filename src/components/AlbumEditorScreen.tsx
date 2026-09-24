@@ -23,9 +23,14 @@ import {
   PanelRightOpen,
   ChevronUp,
   ChevronDown,
-  Film
+  Film,
+  Save,
+  Loader2,
+  MoreVertical,
+  FileDown,
+  Upload
 } from 'lucide-react';
-import { Album, AlbumPage, PageBackgroundConfig, PageMargins, PageSizePreset, PhotoFrameConfig, PhotoPlacement, StoredPhoto } from '../types/album';
+import { Album, AlbumPage, PageBackgroundConfig, PageMargins, PageSizePreset, PhotoFilterType, PhotoFrameConfig, PhotoPlacement, StoredPhoto } from '../types/album';
 import { getLayoutById } from '../services/layouts';
 import { getBackgroundPreviewCss } from '../services/backgrounds';
 import {
@@ -145,6 +150,10 @@ export const AlbumEditorScreen: React.FC<AlbumEditorScreenProps> = ({
   const [isRenaming, setIsRenaming] = useState(false);
   const [albumTitleInput, setAlbumTitleInput] = useState(album.name);
 
+  // Save status & Mobile menu modal state
+  const [saveStatus, setSaveStatus] = useState<'saved' | 'saving' | 'just_saved'>('saved');
+  const [showMobileToolsModal, setShowMobileToolsModal] = useState<boolean>(false);
+
   // Undo / Redo History Stack
   const [history, setHistory] = useState<AlbumPage[][]>([initialPages]);
   const [historyIndex, setHistoryIndex] = useState<number>(0);
@@ -161,13 +170,92 @@ export const AlbumEditorScreen: React.FC<AlbumEditorScreenProps> = ({
     setHistory(newHistory);
     setHistoryIndex(newHistory.length - 1);
     setPages(newPages);
+    setSaveStatus('saving');
 
     // Persist to IndexedDB
     if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
     saveTimeoutRef.current = setTimeout(async () => {
-      await savePages(newPages);
-      await saveAlbum({ ...album, updatedAt: Date.now() });
+      try {
+        await savePages(newPages);
+        await saveAlbum({ ...album, updatedAt: Date.now() });
+        setSaveStatus('just_saved');
+        setTimeout(() => setSaveStatus('saved'), 1500);
+      } catch (err) {
+        console.error('Save error:', err);
+        setSaveStatus('saved');
+      }
     }, 400);
+  };
+
+  const handleManualSave = async () => {
+    if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+    setSaveStatus('saving');
+    try {
+      await savePages(pages);
+      await saveAlbum({ ...album, updatedAt: Date.now() });
+      setSaveStatus('just_saved');
+      setTimeout(() => setSaveStatus('saved'), 1800);
+    } catch (err) {
+      console.error('Manual save failed:', err);
+      setSaveStatus('saved');
+    }
+  };
+
+  const handleExportProjectBackup = () => {
+    try {
+      const backupData = {
+        version: '1.0',
+        exportedAt: new Date().toISOString(),
+        album,
+        pages,
+      };
+      const blob = new Blob([JSON.stringify(backupData, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${album.name.replace(/\s+/g, '_')}_backup.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('Backup error:', err);
+    }
+  };
+
+  const handleRestoreProjectBackup = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async (evt) => {
+      try {
+        const text = evt.target?.result as string;
+        const data = JSON.parse(text);
+        if (data.album && Array.isArray(data.pages)) {
+          setAlbum(data.album);
+          setPages(data.pages);
+          await saveAlbum(data.album);
+          await savePages(data.pages);
+          setSaveStatus('just_saved');
+          setTimeout(() => setSaveStatus('saved'), 1800);
+        }
+      } catch (err) {
+        console.error('Restore error:', err);
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  const handleUpdatePlacementFilter = (slotIndex: number, filter: PhotoFilterType, applyToAllOnPage = false) => {
+    const newPages = pages.map((p, idx) => {
+      if (idx !== activePageIndex) return p;
+      const newPlacements = p.placements.map((pl) => {
+        if (applyToAllOnPage || pl.slotIndex === slotIndex) {
+          return { ...pl, filter };
+        }
+        return pl;
+      });
+      return { ...p, placements: newPlacements, updatedAt: Date.now() };
+    });
+    recordHistoryAndSave(newPages);
   };
 
   const handleUndo = () => {
@@ -571,19 +659,19 @@ export const AlbumEditorScreen: React.FC<AlbumEditorScreenProps> = ({
   return (
     <div className="h-screen flex flex-col bg-slate-100 text-slate-800 select-none overflow-hidden">
       {/* 1. TOP STUDIO TOOLBAR */}
-      <header className="h-14 bg-white border-b border-slate-200 px-5 flex items-center justify-between shadow-2xs z-20">
+      <header className="h-14 bg-white border-b border-slate-200 px-3 sm:px-5 flex items-center justify-between shadow-2xs z-20 gap-2">
         {/* Left: Navigation & Album Title */}
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 sm:gap-3 min-w-0">
           <button
             onClick={onBackToHome}
             title="Back to all albums"
-            className="flex items-center gap-1.5 p-1.5 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-lg text-xs font-semibold transition"
+            className="flex items-center gap-1.5 p-1.5 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-lg text-xs font-semibold transition shrink-0"
           >
             <ArrowLeft className="w-4 h-4" />
-            <span className="hidden sm:inline">Albums</span>
+            <span className="hidden md:inline">Albums</span>
           </button>
 
-          <div className="h-4 w-px bg-slate-200" />
+          <div className="h-4 w-px bg-slate-200 shrink-0" />
 
           {/* Editable Album Name */}
           {isRenaming ? (
@@ -594,7 +682,7 @@ export const AlbumEditorScreen: React.FC<AlbumEditorScreenProps> = ({
                 onChange={(e) => setAlbumTitleInput(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && handleRenameAlbum()}
                 autoFocus
-                className="text-sm font-bold text-slate-900 border border-blue-500 rounded px-2 py-0.5"
+                className="text-sm font-bold text-slate-900 border border-blue-500 rounded px-2 py-0.5 w-32 sm:w-48"
               />
               <button
                 onClick={handleRenameAlbum}
@@ -606,95 +694,144 @@ export const AlbumEditorScreen: React.FC<AlbumEditorScreenProps> = ({
           ) : (
             <div
               onClick={() => setIsRenaming(true)}
-              className="flex items-center gap-1.5 group cursor-pointer"
+              className="flex items-center gap-1.5 group cursor-pointer min-w-0"
+              title="Click to rename album"
             >
-              <h1 className="font-bold text-slate-900 text-sm tracking-tight">{album.name}</h1>
-              <Edit2 className="w-3 h-3 text-slate-400 group-hover:text-blue-600 transition" />
+              <h1 className="font-bold text-slate-900 text-xs sm:text-sm tracking-tight truncate max-w-[110px] sm:max-w-[180px] md:max-w-xs">
+                {album.name}
+              </h1>
+              <Edit2 className="w-3 h-3 text-slate-400 group-hover:text-blue-600 transition shrink-0" />
             </div>
           )}
 
-          <span className="text-[11px] font-mono text-slate-400 hidden md:inline">
+          <span className="text-[11px] font-mono text-slate-400 hidden xl:inline shrink-0">
             ({pages.length} Pages • {photos.length} Photos)
           </span>
         </div>
 
-        {/* Center: Undo / Redo */}
-        <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-lg border border-slate-200">
-          <button
-            onClick={handleUndo}
-            disabled={historyIndex <= 0}
-            title="Undo (Ctrl+Z)"
-            className="p-1.5 text-slate-600 hover:text-slate-900 rounded disabled:opacity-30 disabled:cursor-not-allowed hover:bg-white transition"
-          >
-            <Undo2 className="w-4 h-4" />
-          </button>
-          <button
-            onClick={handleRedo}
-            disabled={historyIndex >= history.length - 1}
-            title="Redo (Ctrl+Y)"
-            className="p-1.5 text-slate-600 hover:text-slate-900 rounded disabled:opacity-30 disabled:cursor-not-allowed hover:bg-white transition"
-          >
-            <Redo2 className="w-4 h-4" />
-          </button>
+        {/* Center: Save Status & Undo / Redo */}
+        <div className="flex items-center gap-1.5 shrink-0">
+          {/* Save Status & Action */}
+          {saveStatus === 'saving' && (
+            <div className="flex items-center gap-1.5 px-2 py-1 text-xs font-medium text-blue-700 bg-blue-50 border border-blue-200 rounded-lg animate-pulse">
+              <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-600" />
+              <span className="hidden sm:inline">Saving...</span>
+            </div>
+          )}
+          {saveStatus === 'just_saved' && (
+            <button
+              onClick={handleManualSave}
+              className="flex items-center gap-1.5 px-2 sm:px-2.5 py-1 text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg transition"
+            >
+              <Check className="w-3.5 h-3.5 text-emerald-600" />
+              <span className="hidden sm:inline">Saved</span>
+            </button>
+          )}
+          {saveStatus === 'saved' && (
+            <button
+              onClick={handleManualSave}
+              title="Save project now"
+              className="flex items-center gap-1.5 px-2 sm:px-2.5 py-1 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 hover:text-slate-900 rounded-lg border border-slate-200 transition"
+            >
+              <Save className="w-3.5 h-3.5 text-slate-500" />
+              <span className="hidden sm:inline">Save</span>
+            </button>
+          )}
+
+          {/* Undo / Redo */}
+          <div className="flex items-center gap-0.5 bg-slate-100 p-0.5 rounded-lg border border-slate-200">
+            <button
+              onClick={handleUndo}
+              disabled={historyIndex <= 0}
+              title="Undo (Ctrl+Z)"
+              className="p-1 sm:p-1.5 text-slate-600 hover:text-slate-900 rounded disabled:opacity-30 disabled:cursor-not-allowed hover:bg-white transition"
+            >
+              <Undo2 className="w-3.5 sm:w-4 h-3.5 sm:h-4" />
+            </button>
+            <button
+              onClick={handleRedo}
+              disabled={historyIndex >= history.length - 1}
+              title="Redo (Ctrl+Y)"
+              className="p-1 sm:p-1.5 text-slate-600 hover:text-slate-900 rounded disabled:opacity-30 disabled:cursor-not-allowed hover:bg-white transition"
+            >
+              <Redo2 className="w-3.5 sm:w-4 h-3.5 sm:h-4" />
+            </button>
+          </div>
         </div>
 
-        {/* Right: Background, Frames, Margins, Preview, Export */}
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => setShowBackgroundModal(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg transition"
-          >
-            <Palette className="w-3.5 h-3.5 text-blue-600" />
-            <span className="hidden sm:inline">Background</span>
-          </button>
+        {/* Right: Actions */}
+        <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+          {/* Desktop-only Quick Modals */}
+          <div className="hidden lg:flex items-center gap-1.5">
+            <button
+              onClick={() => setShowBackgroundModal(true)}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg transition"
+            >
+              <Palette className="w-3.5 h-3.5 text-blue-600" />
+              <span>Background</span>
+            </button>
 
-          <button
-            onClick={() => setShowFrameModal(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg transition"
-          >
-            <Frame className="w-3.5 h-3.5 text-amber-600" />
-            <span className="hidden sm:inline">Frames</span>
-          </button>
+            <button
+              onClick={() => setShowFrameModal(true)}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg transition"
+            >
+              <Frame className="w-3.5 h-3.5 text-amber-600" />
+              <span>Frames</span>
+            </button>
 
-          <button
-            onClick={() => setShowMarginsModal(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg transition"
-          >
-            <Sliders className="w-3.5 h-3.5 text-slate-500" />
-            <span className="hidden sm:inline">Margins & Size</span>
-          </button>
+            <button
+              onClick={() => setShowMarginsModal(true)}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg transition"
+            >
+              <Sliders className="w-3.5 h-3.5 text-slate-500" />
+              <span>Margins & Size</span>
+            </button>
 
-          <button
-            onClick={() => setIsDrawerOpen(!isDrawerOpen)}
-            title={isDrawerOpen ? 'Hide Inspector (Wide Canvas)' : 'Show Inspector'}
-            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg border transition ${
-              isDrawerOpen
-                ? 'bg-blue-50 text-blue-700 border-blue-200 shadow-2xs'
-                : 'bg-white text-slate-700 hover:bg-slate-50 border-slate-200'
-            }`}
-          >
-            {isDrawerOpen ? (
-              <PanelRightClose className="w-3.5 h-3.5 text-blue-600" />
-            ) : (
-              <PanelRightOpen className="w-3.5 h-3.5 text-slate-500" />
-            )}
-            <span className="hidden md:inline">Inspector</span>
-          </button>
+            <button
+              onClick={() => setIsDrawerOpen(!isDrawerOpen)}
+              title={isDrawerOpen ? 'Hide Inspector (Wide Canvas)' : 'Show Inspector'}
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold rounded-lg border transition ${
+                isDrawerOpen
+                  ? 'bg-blue-50 text-blue-700 border-blue-200 shadow-2xs'
+                  : 'bg-white text-slate-700 hover:bg-slate-50 border-slate-200'
+              }`}
+            >
+              {isDrawerOpen ? (
+                <PanelRightClose className="w-3.5 h-3.5 text-blue-600" />
+              ) : (
+                <PanelRightOpen className="w-3.5 h-3.5 text-slate-500" />
+              )}
+              <span>Inspector</span>
+            </button>
+          </div>
 
+          {/* Preview Button */}
           <button
             onClick={() => setShowPreviewModal(true)}
-            className="flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold text-slate-800 bg-slate-100 hover:bg-slate-200 rounded-lg transition"
+            title="Preview Album Flipbook"
+            className="flex items-center gap-1 px-2.5 sm:px-3 py-1.5 text-xs font-semibold text-slate-800 bg-slate-100 hover:bg-slate-200 rounded-lg transition"
           >
             <Eye className="w-3.5 h-3.5 text-blue-600" />
-            <span>Preview</span>
+            <span className="hidden sm:inline">Preview</span>
           </button>
 
+          {/* Prominent Export Button - ALWAYS VISIBLE */}
           <button
             onClick={() => setShowExportModal(true)}
-            className="flex items-center gap-1.5 px-4 py-1.5 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-lg shadow-sm transition active:scale-98"
+            title="Export as Print-Ready PDF or Images"
+            className="flex items-center gap-1.5 px-3 sm:px-4 py-1.5 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-lg shadow-sm transition active:scale-98"
           >
-            <Download className="w-3.5 h-3.5" />
+            <Download className="w-3.5 h-3.5 shrink-0" />
             <span>Export</span>
+          </button>
+
+          {/* Mobile More Tools Menu Button */}
+          <button
+            onClick={() => setShowMobileToolsModal(true)}
+            title="More editing options & backup"
+            className="lg:hidden p-1.5 text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 rounded-lg transition"
+          >
+            <MoreVertical className="w-4 h-4" />
           </button>
         </div>
       </header>
@@ -845,6 +982,7 @@ export const AlbumEditorScreen: React.FC<AlbumEditorScreenProps> = ({
                 albumPhotos={photos}
                 onUpdatePlacement={handleUpdatePlacement}
                 onUpdatePlacementFrame={handleUpdateFrameConfig}
+                onUpdatePlacementFilter={handleUpdatePlacementFilter}
                 onReplacePhoto={handleReplacePhoto}
                 onRemovePhotoFromSlot={handleRemovePhotoFromSlot}
                 onChangePageLayout={handleChangePageLayout}
@@ -1021,6 +1159,176 @@ export const AlbumEditorScreen: React.FC<AlbumEditorScreenProps> = ({
         </button>
       </footer>
     )}
+
+      {/* MOBILE BOTTOM QUICK DOCK (Visible only on < lg) */}
+      <div className="lg:hidden h-14 bg-white border-t border-slate-200 px-2 flex items-center justify-around z-20 shrink-0 shadow-lg text-slate-700">
+        <button
+          onClick={() => setShowBackgroundModal(true)}
+          className="flex flex-col items-center justify-center p-1 text-[10px] font-semibold text-slate-700 hover:text-blue-600 transition"
+        >
+          <Palette className="w-4 h-4 text-blue-600 mb-0.5" />
+          <span>Background</span>
+        </button>
+
+        <button
+          onClick={() => setShowFrameModal(true)}
+          className="flex flex-col items-center justify-center p-1 text-[10px] font-semibold text-slate-700 hover:text-amber-600 transition"
+        >
+          <Frame className="w-4 h-4 text-amber-600 mb-0.5" />
+          <span>Frames</span>
+        </button>
+
+        <button
+          onClick={() => setShowMarginsModal(true)}
+          className="flex flex-col items-center justify-center p-1 text-[10px] font-semibold text-slate-700 hover:text-slate-900 transition"
+        >
+          <Sliders className="w-4 h-4 text-slate-500 mb-0.5" />
+          <span>Margins</span>
+        </button>
+
+        <button
+          onClick={() => setIsDrawerOpen(!isDrawerOpen)}
+          className={`flex flex-col items-center justify-center p-1 text-[10px] font-semibold transition ${
+            isDrawerOpen ? 'text-blue-600 font-bold' : 'text-slate-700'
+          }`}
+        >
+          <PanelRightOpen className="w-4 h-4 mb-0.5 text-blue-600" />
+          <span>Inspector</span>
+        </button>
+
+        <button
+          onClick={() => setShowExportModal(true)}
+          className="flex flex-col items-center justify-center p-1 text-[10px] font-bold text-blue-700 transition"
+        >
+          <Download className="w-4 h-4 text-blue-600 mb-0.5" />
+          <span>Export</span>
+        </button>
+      </div>
+
+      {/* MOBILE TOOLS MODAL */}
+      {showMobileToolsModal && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-900/50 backdrop-blur-xs p-0 sm:p-4">
+          <div className="w-full max-w-md bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl p-5 space-y-4 max-h-[85vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div>
+                <h3 className="font-bold text-slate-900 text-sm">Studio Options & Tools</h3>
+                <p className="text-xs text-slate-500">Quick settings, customization, and backup</p>
+              </div>
+              <button
+                onClick={() => setShowMobileToolsModal(false)}
+                className="p-1.5 text-slate-400 hover:text-slate-700 rounded-lg"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2.5">
+              <button
+                onClick={() => {
+                  setShowMobileToolsModal(false);
+                  setShowBackgroundModal(true);
+                }}
+                className="flex items-center gap-2.5 p-3 rounded-xl border border-slate-200 bg-slate-50/50 hover:bg-blue-50/50 text-left transition"
+              >
+                <Palette className="w-5 h-5 text-blue-600 shrink-0" />
+                <div>
+                  <div className="text-xs font-bold text-slate-800">Backgrounds</div>
+                  <div className="text-[10px] text-slate-500">Colors, textures, photo watermark</div>
+                </div>
+              </button>
+
+              <button
+                onClick={() => {
+                  setShowMobileToolsModal(false);
+                  setShowFrameModal(true);
+                }}
+                className="flex items-center gap-2.5 p-3 rounded-xl border border-slate-200 bg-slate-50/50 hover:bg-amber-50/50 text-left transition"
+              >
+                <Frame className="w-5 h-5 text-amber-600 shrink-0" />
+                <div>
+                  <div className="text-xs font-bold text-slate-800">Frames</div>
+                  <div className="text-[10px] text-slate-500">Floral, smiley, wood, oak, upload</div>
+                </div>
+              </button>
+
+              <button
+                onClick={() => {
+                  setShowMobileToolsModal(false);
+                  setShowMarginsModal(true);
+                }}
+                className="flex items-center gap-2.5 p-3 rounded-xl border border-slate-200 bg-slate-50/50 hover:bg-slate-100 text-left transition"
+              >
+                <Sliders className="w-5 h-5 text-slate-600 shrink-0" />
+                <div>
+                  <div className="text-xs font-bold text-slate-800">Page Margins</div>
+                  <div className="text-[10px] text-slate-500">Bleed, padding, paper size</div>
+                </div>
+              </button>
+
+              <button
+                onClick={() => {
+                  setShowMobileToolsModal(false);
+                  setShowPreviewModal(true);
+                }}
+                className="flex items-center gap-2.5 p-3 rounded-xl border border-slate-200 bg-slate-50/50 hover:bg-slate-100 text-left transition"
+              >
+                <Eye className="w-5 h-5 text-purple-600 shrink-0" />
+                <div>
+                  <div className="text-xs font-bold text-slate-800">Flipbook Preview</div>
+                  <div className="text-[10px] text-slate-500">Full album interactive preview</div>
+                </div>
+              </button>
+            </div>
+
+            {/* Project Backup & Restore */}
+            <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200/80 space-y-2.5">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                  <Save className="w-4 h-4 text-blue-600" />
+                  Save & Backup Project
+                </span>
+                <span className="text-[11px] font-mono text-emerald-600 font-semibold">IndexedDB Active</span>
+              </div>
+              <p className="text-[11px] text-slate-500">
+                Your album automatically saves locally. You can also download a project file to restore anywhere.
+              </p>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => {
+                    handleExportProjectBackup();
+                    setShowMobileToolsModal(false);
+                  }}
+                  className="flex-1 flex items-center justify-center gap-1.5 py-2 px-3 bg-white border border-slate-200 hover:border-slate-300 rounded-lg text-xs font-semibold text-slate-700 transition shadow-2xs"
+                >
+                  <FileDown className="w-3.5 h-3.5 text-blue-600" />
+                  <span>Download Backup</span>
+                </button>
+
+                <label className="flex-1 flex items-center justify-center gap-1.5 py-2 px-3 bg-white border border-slate-200 hover:border-slate-300 rounded-lg text-xs font-semibold text-slate-700 cursor-pointer transition shadow-2xs">
+                  <Upload className="w-3.5 h-3.5 text-emerald-600" />
+                  <span>Restore Backup</span>
+                  <input
+                    type="file"
+                    accept=".json"
+                    onChange={(e) => {
+                      handleRestoreProjectBackup(e);
+                      setShowMobileToolsModal(false);
+                    }}
+                    className="hidden"
+                  />
+                </label>
+              </div>
+            </div>
+
+            <button
+              onClick={() => setShowMobileToolsModal(false)}
+              className="w-full py-2.5 bg-slate-100 hover:bg-slate-200 font-bold text-xs text-slate-700 rounded-xl transition"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* MODALS */}
       {showBackgroundModal && activePage && (

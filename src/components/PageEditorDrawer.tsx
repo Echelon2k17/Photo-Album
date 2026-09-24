@@ -12,9 +12,11 @@ import {
   Maximize2,
   Palette,
   Frame,
-  X
+  X,
+  Sparkles,
+  Check
 } from 'lucide-react';
-import { AlbumLayout, AlbumPage, PhotoFrameConfig, PhotoPlacement, StoredPhoto } from '../types/album';
+import { AlbumLayout, AlbumPage, PhotoFilterType, PhotoFrameConfig, PhotoPlacement, PHOTO_FILTERS, StoredPhoto } from '../types/album';
 import { PREDEFINED_LAYOUTS, getLayoutById } from '../services/layouts';
 import { getBackgroundPreviewCss } from '../services/backgrounds';
 import { FramePickerModal } from './FramePickerModal';
@@ -38,6 +40,7 @@ interface PageEditorDrawerProps {
     frameConfig: PhotoFrameConfig,
     scope: 'slot' | 'page' | 'album'
   ) => void;
+  onUpdatePlacementFilter?: (slotIndex: number, filter: PhotoFilterType, applyToAllOnPage?: boolean) => void;
   onReplacePhoto: (slotIndex: number, photoId: string) => void;
   onRemovePhotoFromSlot: (slotIndex: number) => void;
   onChangePageLayout: (newLayoutId: string) => void;
@@ -52,6 +55,7 @@ export const PageEditorDrawer: React.FC<PageEditorDrawerProps> = ({
   albumPhotos,
   onUpdatePlacement,
   onUpdatePlacementFrame,
+  onUpdatePlacementFilter,
   onReplacePhoto,
   onRemovePhotoFromSlot,
   onChangePageLayout,
@@ -111,32 +115,43 @@ export const PageEditorDrawer: React.FC<PageEditorDrawerProps> = ({
   };
 
   return (
-    <div className="w-80 lg:w-84 max-w-full bg-white border-l border-slate-200 flex flex-col h-full text-slate-800 shadow-sm shrink-0">
-      {/* Drawer Header */}
-      <div className="px-5 py-3.5 border-b border-slate-100 flex items-center justify-between">
-        <div>
-          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Page Inspector</span>
-          <h3 className="font-bold text-slate-900 text-sm">Page {page.pageNumber}</h3>
-        </div>
-        <div className="flex items-center gap-1.5">
-          <button
-            onClick={() => setShowLayoutPickerModal(true)}
-            className="flex items-center gap-1.5 text-xs font-semibold text-blue-600 bg-blue-50 hover:bg-blue-100 px-2.5 py-1.5 rounded-lg transition"
-          >
-            <LayoutGrid className="w-3.5 h-3.5" />
-            <span>Layout</span>
-          </button>
-          {onClose && (
+    <>
+      {/* Mobile Overlay Backdrop */}
+      {onClose && (
+        <div
+          className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs z-40 lg:hidden"
+          onClick={onClose}
+          aria-hidden="true"
+        />
+      )}
+
+      <div className="fixed right-0 top-0 bottom-0 z-50 w-full max-w-sm sm:max-w-md lg:static lg:w-84 max-w-full bg-white border-l border-slate-200 flex flex-col h-full text-slate-800 shadow-2xl lg:shadow-sm shrink-0">
+        {/* Drawer Header */}
+        <div className="px-5 py-3.5 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+          <div>
+            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Page Inspector</span>
+            <h3 className="font-bold text-slate-900 text-sm">Page {page.pageNumber}</h3>
+          </div>
+          <div className="flex items-center gap-1.5">
             <button
-              onClick={onClose}
-              title="Close Inspector (Maximize canvas)"
-              className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition"
+              onClick={() => setShowLayoutPickerModal(true)}
+              className="flex items-center gap-1.5 text-xs font-semibold text-blue-600 bg-blue-50 hover:bg-blue-100 px-2.5 py-1.5 rounded-lg transition"
             >
-              <X className="w-4 h-4" />
+              <LayoutGrid className="w-3.5 h-3.5" />
+              <span>Layout</span>
             </button>
-          )}
+            {onClose && (
+              <button
+                onClick={onClose}
+                title="Close Inspector (Maximize canvas)"
+                className="px-2.5 py-1 text-xs font-bold text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 rounded-lg transition flex items-center gap-1"
+              >
+                <X className="w-3.5 h-3.5" />
+                <span className="lg:hidden">Done</span>
+              </button>
+            )}
+          </div>
         </div>
-      </div>
 
       <div className="flex-1 overflow-y-auto p-5 space-y-6">
         {/* Selected Frame Section */}
@@ -251,6 +266,72 @@ export const PageEditorDrawer: React.FC<PageEditorDrawerProps> = ({
                       <span>+90°</span>
                     </button>
                   </div>
+                </div>
+
+                {/* Photo Filters Section */}
+                <div className="space-y-2 pt-2 border-t border-slate-100">
+                  <div className="flex items-center justify-between">
+                    <span className="font-medium text-slate-700 text-xs flex items-center gap-1.5">
+                      <Sparkles className="w-3.5 h-3.5 text-purple-600" />
+                      <span>Photo Filters</span>
+                    </span>
+                    <span className="text-[11px] font-mono text-purple-600 font-semibold">
+                      {PHOTO_FILTERS.find((f) => f.id === (activePlacement?.filter || 'none'))?.name || 'Original'}
+                    </span>
+                  </div>
+
+                  {/* Filter cards grid */}
+                  <div className="grid grid-cols-3 gap-1.5">
+                    {PHOTO_FILTERS.map((filter) => {
+                      const isActive = (activePlacement?.filter || 'none') === filter.id;
+                      return (
+                        <button
+                          key={filter.id}
+                          type="button"
+                          onClick={() => {
+                            if (activeSlotIndex !== null && onUpdatePlacementFilter) {
+                              onUpdatePlacementFilter(activeSlotIndex, filter.id, false);
+                            }
+                          }}
+                          className={`p-1.5 rounded-lg border text-left transition relative ${
+                            isActive
+                              ? 'border-purple-600 bg-purple-50 text-purple-900 ring-1 ring-purple-600/30 font-bold'
+                              : 'border-slate-200 hover:border-slate-300 bg-white text-slate-700'
+                          }`}
+                        >
+                          {currentPhoto?.thumbnailUrl && (
+                            <div className="w-full aspect-4/3 rounded overflow-hidden mb-1 bg-slate-100">
+                              <img
+                                src={currentPhoto.thumbnailUrl}
+                                alt={filter.name}
+                                className="w-full h-full object-cover"
+                                style={{ filter: filter.cssFilter }}
+                              />
+                            </div>
+                          )}
+                          <div className="flex items-center justify-between">
+                            <span className="text-[10px] truncate">{filter.name}</span>
+                            {isActive && <Check className="w-3 h-3 text-purple-600 shrink-0" />}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {/* Apply filter to all photos on current page */}
+                  {onUpdatePlacementFilter && activePlacement?.filter && activePlacement.filter !== 'none' && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (activeSlotIndex !== null && activePlacement?.filter) {
+                          onUpdatePlacementFilter(activeSlotIndex, activePlacement.filter, true);
+                        }
+                      }}
+                      className="w-full text-center py-1 text-[11px] text-purple-700 hover:text-purple-900 font-medium bg-purple-50 hover:bg-purple-100 rounded-md transition"
+                    >
+                      Apply "{PHOTO_FILTERS.find((f) => f.id === activePlacement.filter)?.name}" to all photos on page
+                    </button>
+                  )}
                 </div>
 
                 {/* Photo Frame & Matting Section */}
@@ -575,5 +656,6 @@ export const PageEditorDrawer: React.FC<PageEditorDrawerProps> = ({
         />
       )}
     </div>
+    </>
   );
 };
