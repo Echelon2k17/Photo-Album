@@ -14,9 +14,25 @@ import {
   Frame,
   X,
   Sparkles,
-  Check
+  Check,
+  Sun,
+  Contrast as ContrastIcon,
+  Sliders
 } from 'lucide-react';
-import { AlbumLayout, AlbumPage, PhotoFilterType, PhotoFrameConfig, PhotoPlacement, PHOTO_FILTERS, StoredPhoto } from '../types/album';
+import {
+  AlbumLayout,
+  AlbumPage,
+  PhotoFilterAdjustments,
+  PhotoFilterType,
+  PhotoFrameConfig,
+  PhotoPlacement,
+  PHOTO_FILTERS,
+  StoredPhoto
+} from '../types/album';
+import {
+  DEFAULT_PHOTO_ADJUSTMENTS,
+  isAdjustmentsActive
+} from '../services/imageProcessing';
 import { PREDEFINED_LAYOUTS, getLayoutById } from '../services/layouts';
 import { getBackgroundPreviewCss } from '../services/backgrounds';
 import { FramePickerModal } from './FramePickerModal';
@@ -41,6 +57,12 @@ interface PageEditorDrawerProps {
     scope: 'slot' | 'page' | 'album'
   ) => void;
   onUpdatePlacementFilter?: (slotIndex: number, filter: PhotoFilterType, applyToAllOnPage?: boolean) => void;
+  onUpdatePlacementAdjustments?: (
+    slotIndex: number,
+    adjustments: PhotoFilterAdjustments,
+    applyToAllOnPage?: boolean
+  ) => void;
+  onOpenFilterModal?: (slotIndex: number) => void;
   onReplacePhoto: (slotIndex: number, photoId: string) => void;
   onRemovePhotoFromSlot: (slotIndex: number) => void;
   onChangePageLayout: (newLayoutId: string) => void;
@@ -56,6 +78,8 @@ export const PageEditorDrawer: React.FC<PageEditorDrawerProps> = ({
   onUpdatePlacement,
   onUpdatePlacementFrame,
   onUpdatePlacementFilter,
+  onUpdatePlacementAdjustments,
+  onOpenFilterModal,
   onReplacePhoto,
   onRemovePhotoFromSlot,
   onChangePageLayout,
@@ -268,68 +292,278 @@ export const PageEditorDrawer: React.FC<PageEditorDrawerProps> = ({
                   </div>
                 </div>
 
-                {/* Photo Filters Section */}
-                <div className="space-y-2 pt-2 border-t border-slate-100">
+                {/* Photo Filters & Canvas Image Processing Section */}
+                <div className="space-y-3 pt-2 border-t border-slate-100">
                   <div className="flex items-center justify-between">
                     <span className="font-medium text-slate-700 text-xs flex items-center gap-1.5">
                       <Sparkles className="w-3.5 h-3.5 text-purple-600" />
-                      <span>Photo Filters</span>
+                      <span>Photo Filters & Adjustments</span>
                     </span>
-                    <span className="text-[11px] font-mono text-purple-600 font-semibold">
-                      {PHOTO_FILTERS.find((f) => f.id === (activePlacement?.filter || 'none'))?.name || 'Original'}
-                    </span>
+                    {onOpenFilterModal && activeSlotIndex !== null && (
+                      <button
+                        type="button"
+                        onClick={() => onOpenFilterModal(activeSlotIndex)}
+                        className="text-[11px] font-semibold text-purple-600 hover:text-purple-800 flex items-center gap-1 hover:underline"
+                        title="Open advanced filter modal"
+                      >
+                        <Sliders className="w-3 h-3" />
+                        <span>Studio...</span>
+                      </button>
+                    )}
                   </div>
 
-                  {/* Filter cards grid */}
+                  {/* Quick Filters (Original, B&W, Sepia) */}
                   <div className="grid grid-cols-3 gap-1.5">
-                    {PHOTO_FILTERS.map((filter) => {
-                      const isActive = (activePlacement?.filter || 'none') === filter.id;
-                      return (
-                        <button
-                          key={filter.id}
-                          type="button"
-                          onClick={() => {
-                            if (activeSlotIndex !== null && onUpdatePlacementFilter) {
-                              onUpdatePlacementFilter(activeSlotIndex, filter.id, false);
-                            }
-                          }}
-                          className={`p-1.5 rounded-lg border text-left transition relative ${
-                            isActive
-                              ? 'border-purple-600 bg-purple-50 text-purple-900 ring-1 ring-purple-600/30 font-bold'
-                              : 'border-slate-200 hover:border-slate-300 bg-white text-slate-700'
-                          }`}
-                        >
-                          {currentPhoto?.thumbnailUrl && (
-                            <div className="w-full aspect-4/3 rounded overflow-hidden mb-1 bg-slate-100">
-                              <img
-                                src={currentPhoto.thumbnailUrl}
-                                alt={filter.name}
-                                className="w-full h-full object-cover"
-                                style={{ filter: filter.cssFilter }}
-                              />
-                            </div>
-                          )}
-                          <div className="flex items-center justify-between">
-                            <span className="text-[10px] truncate">{filter.name}</span>
-                            {isActive && <Check className="w-3 h-3 text-purple-600 shrink-0" />}
-                          </div>
-                        </button>
-                      );
-                    })}
-                  </div>
-
-                  {/* Apply filter to all photos on current page */}
-                  {onUpdatePlacementFilter && activePlacement?.filter && activePlacement.filter !== 'none' && (
                     <button
                       type="button"
                       onClick={() => {
-                        if (activeSlotIndex !== null && activePlacement?.filter) {
-                          onUpdatePlacementFilter(activeSlotIndex, activePlacement.filter, true);
+                        if (activeSlotIndex !== null) {
+                          onUpdatePlacementFilter?.(activeSlotIndex, 'none', false);
+                          onUpdatePlacementAdjustments?.(activeSlotIndex, {
+                            brightness: 100,
+                            contrast: 100,
+                            grayscale: 0,
+                            sepia: 0,
+                          }, false);
+                        }
+                      }}
+                      className={`py-1.5 px-2 rounded-lg border text-center text-xs transition ${
+                        (activePlacement?.filter || 'none') === 'none' &&
+                        !isAdjustmentsActive(activePlacement?.adjustments)
+                          ? 'border-blue-600 bg-blue-50 text-blue-800 font-bold ring-1 ring-blue-600/30'
+                          : 'border-slate-200 hover:border-slate-300 bg-white text-slate-700'
+                      }`}
+                    >
+                      Original
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (activeSlotIndex !== null) {
+                          onUpdatePlacementFilter?.(activeSlotIndex, 'none', false);
+                          const isAlreadyBW = (activePlacement?.adjustments?.grayscale ?? 0) === 100;
+                          onUpdatePlacementAdjustments?.(activeSlotIndex, {
+                            ...(activePlacement?.adjustments || DEFAULT_PHOTO_ADJUSTMENTS),
+                            grayscale: isAlreadyBW ? 0 : 100,
+                            sepia: 0,
+                          }, false);
+                        }
+                      }}
+                      className={`py-1.5 px-2 rounded-lg border text-center text-xs transition flex items-center justify-center gap-1 ${
+                        (activePlacement?.adjustments?.grayscale ?? 0) === 100 ||
+                        activePlacement?.filter === 'grayscale'
+                          ? 'border-slate-800 bg-slate-900 text-white font-bold'
+                          : 'border-slate-200 hover:border-slate-300 bg-white text-slate-700'
+                      }`}
+                    >
+                      <span className="w-2.5 h-2.5 rounded-full bg-slate-600 inline-block border border-white" />
+                      <span>B&W</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (activeSlotIndex !== null) {
+                          onUpdatePlacementFilter?.(activeSlotIndex, 'none', false);
+                          const isAlreadySepia = (activePlacement?.adjustments?.sepia ?? 0) === 100;
+                          onUpdatePlacementAdjustments?.(activeSlotIndex, {
+                            ...(activePlacement?.adjustments || DEFAULT_PHOTO_ADJUSTMENTS),
+                            sepia: isAlreadySepia ? 0 : 100,
+                            grayscale: 0,
+                          }, false);
+                        }
+                      }}
+                      className={`py-1.5 px-2 rounded-lg border text-center text-xs transition flex items-center justify-center gap-1 ${
+                        (activePlacement?.adjustments?.sepia ?? 0) === 100 ||
+                        activePlacement?.filter === 'sepia'
+                          ? 'border-amber-700 bg-amber-700 text-white font-bold'
+                          : 'border-slate-200 hover:border-slate-300 bg-white text-slate-700'
+                      }`}
+                    >
+                      <span className="w-2.5 h-2.5 rounded-full bg-amber-500 inline-block border border-white" />
+                      <span>Sepia</span>
+                    </button>
+                  </div>
+
+                  {/* Brightness & Contrast Sliders */}
+                  <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200/80 space-y-2.5">
+                    {/* Brightness */}
+                    <div className="space-y-1">
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="text-slate-600 flex items-center gap-1 font-medium">
+                          <Sun className="w-3.5 h-3.5 text-amber-500" />
+                          <span>Brightness</span>
+                        </span>
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-mono text-[11px] text-slate-700 font-bold">
+                            {activePlacement?.adjustments?.brightness ?? 100}%
+                          </span>
+                          {(activePlacement?.adjustments?.brightness ?? 100) !== 100 && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (activeSlotIndex !== null && onUpdatePlacementAdjustments) {
+                                  onUpdatePlacementAdjustments(activeSlotIndex, {
+                                    ...(activePlacement?.adjustments || DEFAULT_PHOTO_ADJUSTMENTS),
+                                    brightness: 100,
+                                  }, false);
+                                }
+                              }}
+                              className="text-[10px] text-blue-600 hover:underline"
+                            >
+                              Reset
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                      <input
+                        type="range"
+                        min="50"
+                        max="150"
+                        step="1"
+                        value={activePlacement?.adjustments?.brightness ?? 100}
+                        onChange={(e) => {
+                          if (activeSlotIndex !== null && onUpdatePlacementAdjustments) {
+                            onUpdatePlacementAdjustments(activeSlotIndex, {
+                              ...(activePlacement?.adjustments || DEFAULT_PHOTO_ADJUSTMENTS),
+                              brightness: parseInt(e.target.value, 10),
+                            }, false);
+                          }
+                        }}
+                        className="w-full accent-blue-600 cursor-pointer h-1.5 bg-slate-200 rounded-lg"
+                      />
+                    </div>
+
+                    {/* Contrast */}
+                    <div className="space-y-1">
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="text-slate-600 flex items-center gap-1 font-medium">
+                          <ContrastIcon className="w-3.5 h-3.5 text-indigo-500" />
+                          <span>Contrast</span>
+                        </span>
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-mono text-[11px] text-slate-700 font-bold">
+                            {activePlacement?.adjustments?.contrast ?? 100}%
+                          </span>
+                          {(activePlacement?.adjustments?.contrast ?? 100) !== 100 && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (activeSlotIndex !== null && onUpdatePlacementAdjustments) {
+                                  onUpdatePlacementAdjustments(activeSlotIndex, {
+                                    ...(activePlacement?.adjustments || DEFAULT_PHOTO_ADJUSTMENTS),
+                                    contrast: 100,
+                                  }, false);
+                                }
+                              }}
+                              className="text-[10px] text-blue-600 hover:underline"
+                            >
+                              Reset
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                      <input
+                        type="range"
+                        min="50"
+                        max="150"
+                        step="1"
+                        value={activePlacement?.adjustments?.contrast ?? 100}
+                        onChange={(e) => {
+                          if (activeSlotIndex !== null && onUpdatePlacementAdjustments) {
+                            onUpdatePlacementAdjustments(activeSlotIndex, {
+                              ...(activePlacement?.adjustments || DEFAULT_PHOTO_ADJUSTMENTS),
+                              contrast: parseInt(e.target.value, 10),
+                            }, false);
+                          }
+                        }}
+                        className="w-full accent-indigo-600 cursor-pointer h-1.5 bg-slate-200 rounded-lg"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Filter cards grid for creative presets */}
+                  <div className="space-y-1.5">
+                    <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
+                      Creative Presets
+                    </span>
+                    <div className="grid grid-cols-3 gap-1.5">
+                      {PHOTO_FILTERS.map((filter) => {
+                        const isActive = (activePlacement?.filter || 'none') === filter.id;
+                        return (
+                          <button
+                            key={filter.id}
+                            type="button"
+                            onClick={() => {
+                              if (activeSlotIndex !== null && onUpdatePlacementFilter) {
+                                onUpdatePlacementFilter(activeSlotIndex, filter.id, false);
+                              }
+                            }}
+                            className={`p-1.5 rounded-lg border text-left transition relative ${
+                              isActive
+                                ? 'border-purple-600 bg-purple-50 text-purple-900 ring-1 ring-purple-600/30 font-bold'
+                                : 'border-slate-200 hover:border-slate-300 bg-white text-slate-700'
+                            }`}
+                          >
+                            {currentPhoto?.thumbnailUrl && (
+                              <div className="w-full aspect-4/3 rounded overflow-hidden mb-1 bg-slate-100">
+                                <img
+                                  src={currentPhoto.thumbnailUrl}
+                                  alt={filter.name}
+                                  className="w-full h-full object-cover"
+                                  style={{ filter: filter.cssFilter }}
+                                />
+                              </div>
+                            )}
+                            <div className="flex items-center justify-between">
+                              <span className="text-[10px] truncate">{filter.name}</span>
+                              {isActive && <Check className="w-3 h-3 text-purple-600 shrink-0" />}
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Reset Adjustments */}
+                  {(isAdjustmentsActive(activePlacement?.adjustments) || (activePlacement?.filter && activePlacement.filter !== 'none')) && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (activeSlotIndex !== null) {
+                          onUpdatePlacementFilter?.(activeSlotIndex, 'none', false);
+                          onUpdatePlacementAdjustments?.(activeSlotIndex, {
+                            brightness: 100,
+                            contrast: 100,
+                            grayscale: 0,
+                            sepia: 0,
+                          }, false);
+                        }
+                      }}
+                      className="w-full text-center py-1 text-xs text-slate-600 hover:text-slate-900 font-medium bg-slate-100 hover:bg-slate-200 rounded-md transition"
+                    >
+                      Reset All Adjustments
+                    </button>
+                  )}
+
+                  {/* Apply filter to all photos on current page */}
+                  {((activePlacement?.filter && activePlacement.filter !== 'none') || isAdjustmentsActive(activePlacement?.adjustments)) && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (activeSlotIndex !== null) {
+                          if (activePlacement?.filter) {
+                            onUpdatePlacementFilter?.(activeSlotIndex, activePlacement.filter, true);
+                          }
+                          if (activePlacement?.adjustments) {
+                            onUpdatePlacementAdjustments?.(activeSlotIndex, activePlacement.adjustments, true);
+                          }
                         }
                       }}
                       className="w-full text-center py-1 text-[11px] text-purple-700 hover:text-purple-900 font-medium bg-purple-50 hover:bg-purple-100 rounded-md transition"
                     >
-                      Apply "{PHOTO_FILTERS.find((f) => f.id === activePlacement.filter)?.name}" to all photos on page
+                      Apply filter & adjustments to all photos on page
                     </button>
                   )}
                 </div>

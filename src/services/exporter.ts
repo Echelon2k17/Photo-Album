@@ -1,7 +1,7 @@
 import { jsPDF } from 'jspdf';
 import JSZip from 'jszip';
 import { Album, AlbumPage, ExportSettings, PAGE_SIZE_CONFIGS, PageDimensions } from '../types/album';
-import { getPhotoById } from './db';
+import { getPhotoById, toBlob } from './db';
 import { getLayoutById } from './layouts';
 import { renderAlbumPage, RenderPhotoSource } from './renderer';
 
@@ -27,29 +27,58 @@ export function computeCanvasDimensions(
 }
 
 /**
- * Loads the ORIGINAL uncompressed image blob for high-resolution print export.
- * Critical requirement: Never uses the preview or thumbnail blobs for export.
+ * Loads the best available image source for high-resolution print export.
+ * Prefers the original uncompressed blob, gracefully falling back to preview blob or data URL.
  */
 async function loadOriginalPhotoForExport(photoId: string): Promise<RenderPhotoSource | null> {
   const photo = await getPhotoById(photoId);
-  if (!photo || !photo.originalBlob) return null;
+  if (!photo) return null;
+
+  const sourceBlob = toBlob(photo.originalBlob, photo.mimeType) || toBlob(photo.previewBlob, photo.mimeType);
+
+  if (sourceBlob) {
+    let url = '';
+    try {
+      url = URL.createObjectURL(sourceBlob);
+      const res = await new Promise<RenderPhotoSource | null>((resolve) => {
+        const img = new Image();
+        img.onload = () => {
+          URL.revokeObjectURL(url);
+          resolve({
+            image: img,
+            width: img.naturalWidth || img.width,
+            height: img.naturalHeight || img.height,
+          });
+        };
+        img.onerror = () => {
+          URL.revokeObjectURL(url);
+          resolve(null);
+        };
+        img.src = url;
+      });
+      if (res) return res;
+    } catch {
+      if (url) {
+        try { URL.revokeObjectURL(url); } catch {}
+      }
+    }
+  }
+
+  // Fallback to active previewUrl or permanent Base64 thumbnailUrl
+  const fallbackUrl = photo.previewUrl || photo.thumbnailUrl;
+  if (!fallbackUrl) return null;
 
   return new Promise((resolve) => {
     const img = new Image();
-    const url = URL.createObjectURL(photo.originalBlob);
     img.onload = () => {
-      URL.revokeObjectURL(url);
       resolve({
         image: img,
         width: img.naturalWidth || img.width,
         height: img.naturalHeight || img.height,
       });
     };
-    img.onerror = () => {
-      URL.revokeObjectURL(url);
-      resolve(null);
-    };
-    img.src = url;
+    img.onerror = () => resolve(null);
+    img.src = fallbackUrl;
   });
 }
 

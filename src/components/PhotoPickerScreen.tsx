@@ -12,7 +12,7 @@ import {
 } from 'lucide-react';
 import { StoredPhoto } from '../types/album';
 import { SAMPLE_PHOTOS, createSamplePlaceholderBlob } from '../services/sampleData';
-import { createDownsampledBlob, getObjectUrlForBlob, savePhoto } from '../services/db';
+import { createDownsampledBlob, fileToDetachedBlob, getObjectUrlForBlob, savePhoto } from '../services/db';
 
 interface PhotoPickerScreenProps {
   albumName: string;
@@ -50,22 +50,23 @@ export const PhotoPickerScreen: React.FC<PhotoPickerScreenProps> = ({
       try {
         const photoId = 'photo_' + Date.now() + '_' + Math.random().toString(36).substring(2, 9);
 
-        // Tier A: Original Blob (never resized or compressed)
-        const originalBlob = file;
+        // Tier A: Original Blob detached from OS file handle
+        const originalBlob = await fileToDetachedBlob(file);
 
         // Tier B: Preview Blob (~1400px max) for high-speed editor rendering
         const previewResult = await createDownsampledBlob(originalBlob, 1400, 0.88);
         const previewUrl = getObjectUrlForBlob(photoId + '_preview', previewResult.blob);
 
-        // Tier C: Thumbnail Blob (~260px max) for grid & page strips
+        // Tier C: Thumbnail Blob (~260px max) with permanent Base64 Data URL
         const thumbResult = await createDownsampledBlob(originalBlob, 260, 0.8);
-        const thumbnailUrl = getObjectUrlForBlob(photoId + '_thumb', thumbResult.blob);
+        const thumbnailUrl = thumbResult.dataUrl || getObjectUrlForBlob(photoId + '_thumb', thumbResult.blob);
 
         const stored: StoredPhoto = {
           id: photoId,
           albumId,
           name: file.name,
           originalBlob,
+          previewBlob: previewResult.blob,
           previewUrl,
           thumbnailUrl,
           width: previewResult.originalWidth,
@@ -125,13 +126,14 @@ export const PhotoPickerScreen: React.FC<PhotoPickerScreenProps> = ({
         const previewUrl = getObjectUrlForBlob(photoId + '_preview', previewResult.blob);
 
         const thumbResult = await createDownsampledBlob(originalBlob, 260, 0.8);
-        const thumbnailUrl = getObjectUrlForBlob(photoId + '_thumb', thumbResult.blob);
+        const thumbnailUrl = thumbResult.dataUrl || getObjectUrlForBlob(photoId + '_thumb', thumbResult.blob);
 
         const stored: StoredPhoto = {
           id: photoId,
           albumId,
           name: sample.name,
           originalBlob,
+          previewBlob: previewResult.blob,
           previewUrl,
           thumbnailUrl,
           width: previewResult.originalWidth,

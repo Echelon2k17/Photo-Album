@@ -314,13 +314,14 @@ export default function App() {
         const previewUrl = getObjectUrlForBlob(photoId + '_preview', previewResult.blob);
 
         const thumbResult = await createDownsampledBlob(originalBlob, 260, 0.8);
-        const thumbnailUrl = getObjectUrlForBlob(photoId + '_thumb', thumbResult.blob);
+        const thumbnailUrl = thumbResult.dataUrl || getObjectUrlForBlob(photoId + '_thumb', thumbResult.blob);
 
         const stored: StoredPhoto = {
           id: photoId,
           albumId: demoAlbumId,
           name: item.name,
           originalBlob,
+          previewBlob: previewResult.blob,
           previewUrl,
           thumbnailUrl,
           width: previewResult.originalWidth,

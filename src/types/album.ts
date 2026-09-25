@@ -93,6 +93,13 @@ export const PHOTO_FILTERS: PhotoFilterDef[] = [
   { id: 'fade', name: 'Matte Fade', cssFilter: 'contrast(92%) brightness(112%) saturate(82%)', previewColor: '#8b5cf6' },
 ];
 
+export interface PhotoFilterAdjustments {
+  brightness?: number; // 50 to 150 (percentage, 100 is normal/default)
+  contrast?: number;   // 50 to 150 (percentage, 100 is normal/default)
+  grayscale?: number;  // 0 to 100 (%) (Black & White)
+  sepia?: number;      // 0 to 100 (%) (Sepia)
+}
+
 export interface PhotoPlacement {
   slotIndex: number;
   photoId: string;
@@ -102,6 +109,7 @@ export interface PhotoPlacement {
   rotation: number;     // 0, 90, 180, 270
   frameConfig?: PhotoFrameConfig;
   filter?: PhotoFilterType;
+  adjustments?: PhotoFilterAdjustments;
 }
 
 export type BackgroundType = 'color' | 'gradient' | 'texture' | 'image';
@@ -147,8 +155,9 @@ export interface StoredPhoto {
   albumId: string;
   name: string;
   originalBlob: Blob;
-  previewUrl: string; // Object URL or Base64 thumbnail
-  thumbnailUrl: string;
+  previewBlob?: Blob; // Downsampled ~1400px blob stored directly in IndexedDB for fast canvas rendering
+  previewUrl: string; // Active session Object URL or Base64
+  thumbnailUrl: string; // Permanent Base64 Data URL (persists across browser restarts without session revocation)
   width: number;
   height: number;
   mimeType: string;

@@ -8,7 +8,8 @@ import {
   Image as ImageIcon,
   Frame,
   Move,
-  Plus
+  Plus,
+  Sliders
 } from 'lucide-react';
 import { getPhotoById } from '../services/db';
 import { getLayoutById } from '../services/layouts';
@@ -33,6 +34,7 @@ export interface AlbumPageCanvasProps {
   onCommitPlacementHistory?: () => void;
   onEmptySlotClick?: (slotIndex: number) => void;
   onOpenFramePicker?: () => void;
+  onOpenFilterPicker?: (slotIndex: number) => void;
   onRemovePhoto?: (slotIndex: number) => void;
   showMarginGuides?: boolean;
   maxWidth?: number;
@@ -51,6 +53,7 @@ export const AlbumPageCanvas: React.FC<AlbumPageCanvasProps> = ({
   onCommitPlacementHistory,
   onEmptySlotClick,
   onOpenFramePicker,
+  onOpenFilterPicker,
   onRemovePhoto,
   showMarginGuides = true,
   maxWidth = 850,
@@ -102,25 +105,25 @@ export const AlbumPageCanvas: React.FC<AlbumPageCanvasProps> = ({
       for (const id of requiredPhotoIds) {
         const photo = await getPhotoById(id);
         if (photo && !isCancelled) {
-          // Use previewUrl or thumbnailUrl for crisp lag-free interactive canvas
+          // Try candidates: previewUrl first, then permanent thumbnailUrl
+          const candidates = [photo.previewUrl, photo.thumbnailUrl].filter(Boolean);
           const img = new Image();
           let loaded = false;
-          await new Promise<void>((res) => {
-            img.onload = () => {
+
+          for (const src of candidates) {
+            const success = await new Promise<boolean>((resolve) => {
+              const testImg = new Image();
+              testImg.onload = () => resolve(true);
+              testImg.onerror = () => resolve(false);
+              testImg.src = src;
+            });
+
+            if (success) {
+              img.src = src;
               loaded = true;
-              res();
-            };
-            img.onerror = () => {
-              if (photo.thumbnailUrl && img.src !== photo.thumbnailUrl) {
-                // Try fallback to thumbnail URL
-                img.src = photo.thumbnailUrl;
-              } else {
-                loaded = false;
-                res();
-              }
-            };
-            img.src = photo.previewUrl || photo.thumbnailUrl;
-          });
+              break;
+            }
+          }
 
           if (loaded && !isCancelled) {
             newMap.set(id, {
@@ -452,6 +455,20 @@ export const AlbumPageCanvas: React.FC<AlbumPageCanvasProps> = ({
                       className="p-1 hover:bg-slate-800 rounded-full text-slate-300 hover:text-amber-400 transition"
                     >
                       <Frame className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+
+                  {/* Photo Filters & Adjustments */}
+                  {onOpenFilterPicker && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onOpenFilterPicker(activeSlotIndex!);
+                      }}
+                      title="Photo Filters & Adjustments (B&W, Sepia, Brightness, Contrast)"
+                      className="p-1 hover:bg-slate-800 rounded-full text-slate-300 hover:text-purple-400 transition"
+                    >
+                      <Sliders className="w-3.5 h-3.5 text-purple-400" />
                     </button>
                   )}
 

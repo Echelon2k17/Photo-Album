@@ -33,39 +33,94 @@ function getDB(): Promise<IDBDatabase> {
   return dbPromise;
 }
 
+// Convert File to detached in-memory Blob to guarantee OS file handle does not expire across browser restart
+export async function fileToDetachedBlob(fileOrBlob: Blob): Promise<Blob> {
+  try {
+    const buffer = await fileOrBlob.arrayBuffer();
+    return new Blob([buffer], { type: fileOrBlob.type || 'image/jpeg' });
+  } catch (err) {
+    console.warn('Failed to detach blob buffer, falling back to original:', err);
+    return fileOrBlob;
+  }
+}
+
 // Memory cache of generated Object URLs to avoid leaking or re-allocating
 const objectUrlCache = new Map<string, string>();
 
-export function getObjectUrlForBlob(id: string, blob: Blob): string {
+export function toBlob(data: any, mimeType = 'image/jpeg'): Blob | null {
+  if (!data) return null;
+  if (data instanceof Blob) return data;
+  if (data instanceof ArrayBuffer) return new Blob([data], { type: mimeType });
+  if (ArrayBuffer.isView(data)) return new Blob([data.buffer as ArrayBuffer], { type: mimeType });
+  if (data.buffer instanceof ArrayBuffer) return new Blob([data.buffer], { type: mimeType });
+  return null;
+}
+
+export function getObjectUrlForBlob(id: string, blobOrData: any, mimeType = 'image/jpeg'): string {
   if (objectUrlCache.has(id)) {
     return objectUrlCache.get(id)!;
   }
-  const url = URL.createObjectURL(blob);
-  objectUrlCache.set(id, url);
-  return url;
+  const blob = toBlob(blobOrData, mimeType);
+  if (!blob) return '';
+  try {
+    const url = URL.createObjectURL(blob);
+    objectUrlCache.set(id, url);
+    return url;
+  } catch (err) {
+    console.warn(`Failed to create object URL for ${id}:`, err);
+    return '';
+  }
 }
 
 export function revokeObjectUrl(id: string) {
   if (objectUrlCache.has(id)) {
-    URL.revokeObjectURL(objectUrlCache.get(id)!);
+    try {
+      URL.revokeObjectURL(objectUrlCache.get(id)!);
+    } catch {}
     objectUrlCache.delete(id);
   }
 }
 
 // Helper to downsample a photo blob for Preview (~1400px) or Thumbnail (~260px)
+// Produces BOTH an in-memory downsampled Blob AND a permanent Base64 Data URL
 export async function createDownsampledBlob(
   originalBlob: Blob,
   maxDimension: number,
   quality = 0.88
-): Promise<{ blob: Blob; width: number; height: number; originalWidth: number; originalHeight: number }> {
-  return new Promise((resolve, reject) => {
+): Promise<{
+  blob: Blob;
+  dataUrl: string;
+  width: number;
+  height: number;
+  originalWidth: number;
+  originalHeight: number;
+}> {
+  return new Promise((resolve) => {
+    const blobToLoad = toBlob(originalBlob) || originalBlob;
+    let url = '';
+    try {
+      url = URL.createObjectURL(blobToLoad);
+    } catch {
+      resolve({
+        blob: originalBlob,
+        dataUrl: '',
+        width: 1200,
+        height: 800,
+        originalWidth: 1200,
+        originalHeight: 800,
+      });
+      return;
+    }
+
     const img = new Image();
-    const url = URL.createObjectURL(originalBlob);
 
     img.onload = () => {
-      URL.revokeObjectURL(url);
-      const origW = img.naturalWidth || img.width;
-      const origH = img.naturalHeight || img.height;
+      try {
+        URL.revokeObjectURL(url);
+      } catch {}
+
+      const origW = img.naturalWidth || img.width || 1200;
+      const origH = img.naturalHeight || img.height || 800;
 
       let targetW = origW;
       let targetH = origH;
@@ -85,7 +140,14 @@ export async function createDownsampledBlob(
       canvas.height = targetH;
       const ctx = canvas.getContext('2d');
       if (!ctx) {
-        resolve({ blob: originalBlob, width: origW, height: origH, originalWidth: origW, originalHeight: origH });
+        resolve({
+          blob: originalBlob,
+          dataUrl: '',
+          width: origW,
+          height: origH,
+          originalWidth: origW,
+          originalHeight: origH,
+        });
         return;
       }
 
@@ -93,24 +155,37 @@ export async function createDownsampledBlob(
       ctx.imageSmoothingQuality = 'high';
       ctx.drawImage(img, 0, 0, targetW, targetH);
 
+      const mimeType = 'image/jpeg';
+      let dataUrl = '';
+      try {
+        dataUrl = canvas.toDataURL(mimeType, quality);
+      } catch (e) {
+        console.warn('Canvas toDataURL failed:', e);
+      }
+
       canvas.toBlob(
         (b) => {
-          if (b) {
-            resolve({ blob: b, width: targetW, height: targetH, originalWidth: origW, originalHeight: origH });
-          } else {
-            resolve({ blob: originalBlob, width: origW, height: origH, originalWidth: origW, originalHeight: origH });
-          }
+          resolve({
+            blob: b || originalBlob,
+            dataUrl,
+            width: targetW,
+            height: targetH,
+            originalWidth: origW,
+            originalHeight: origH,
+          });
         },
-        'image/jpeg',
+        mimeType,
         quality
       );
     };
 
     img.onerror = () => {
-      URL.revokeObjectURL(url);
-      // Fallback safely to original blob to prevent unhandled rejection
+      try {
+        URL.revokeObjectURL(url);
+      } catch {}
       resolve({
         blob: originalBlob,
+        dataUrl: '',
         width: 1200,
         height: 800,
         originalWidth: 1200,
@@ -122,25 +197,49 @@ export async function createDownsampledBlob(
   });
 }
 
-// Ensure loaded photos have active, valid object URLs after browser reload
+// Ensure loaded photos have active, valid URLs after browser reload
+// If thumbnailUrl is a permanent Base64 Data URL, it is preserved indefinitely.
+// If previewUrl is expired, it is re-minted from previewBlob or originalBlob.
 export function ensurePhotoUrls(photo: StoredPhoto): StoredPhoto {
   if (!photo) return photo;
-  let previewUrl = photo.previewUrl;
-  let thumbnailUrl = photo.thumbnailUrl;
 
-  if (photo.originalBlob) {
-    if (!previewUrl || (previewUrl.startsWith('blob:') && !objectUrlCache.has(photo.id + '_preview'))) {
-      previewUrl = getObjectUrlForBlob(photo.id + '_preview', photo.originalBlob);
+  const validOriginalBlob = toBlob(photo.originalBlob, photo.mimeType) || photo.originalBlob;
+  const validPreviewBlob = toBlob(photo.previewBlob, photo.mimeType) || photo.previewBlob || validOriginalBlob;
+
+  let thumbnailUrl = photo.thumbnailUrl;
+  const isThumbDeadBlob = thumbnailUrl && thumbnailUrl.startsWith('blob:') && !objectUrlCache.has(photo.id + '_thumb');
+
+  // If thumbnail is empty or a dead blob from a prior session, create an object URL
+  if (!thumbnailUrl || isThumbDeadBlob) {
+    if (validPreviewBlob || validOriginalBlob) {
+      thumbnailUrl = getObjectUrlForBlob(photo.id + '_thumb', validPreviewBlob || validOriginalBlob, photo.mimeType);
     }
-    if (!thumbnailUrl || (thumbnailUrl.startsWith('blob:') && !objectUrlCache.has(photo.id + '_thumb'))) {
-      thumbnailUrl = getObjectUrlForBlob(photo.id + '_thumb', photo.originalBlob);
+  }
+
+  let previewUrl = photo.previewUrl;
+  const isPreviewDeadBlob = previewUrl && previewUrl.startsWith('blob:') && !objectUrlCache.has(photo.id + '_preview');
+
+  // If preview is empty or a dead blob from a prior session, generate a live object URL
+  if (!previewUrl || isPreviewDeadBlob) {
+    if (validPreviewBlob || validOriginalBlob) {
+      previewUrl = getObjectUrlForBlob(photo.id + '_preview', validPreviewBlob || validOriginalBlob, photo.mimeType);
     }
+  }
+
+  // Graceful cross-fallbacks
+  if (!previewUrl && thumbnailUrl) {
+    previewUrl = thumbnailUrl;
+  }
+  if (!thumbnailUrl && previewUrl) {
+    thumbnailUrl = previewUrl;
   }
 
   return {
     ...photo,
-    previewUrl,
-    thumbnailUrl,
+    originalBlob: validOriginalBlob,
+    previewBlob: validPreviewBlob,
+    previewUrl: previewUrl || '',
+    thumbnailUrl: thumbnailUrl || '',
   };
 }
 
@@ -230,6 +329,50 @@ export async function savePhoto(photo: StoredPhoto): Promise<void> {
   });
 }
 
+// Background repair utility: if an existing photo is missing a permanent Base64 thumbnail or previewBlob,
+// regenerate it seamlessly from originalBlob and persist it back to IndexedDB
+async function repairPhotoIfNeeded(photo: StoredPhoto): Promise<void> {
+  try {
+    const isMissingBase64Thumb = !photo.thumbnailUrl || !photo.thumbnailUrl.startsWith('data:');
+    const isMissingPreviewBlob = !photo.previewBlob;
+    if (!isMissingBase64Thumb && !isMissingPreviewBlob) return;
+
+    const sourceBlob = photo.previewBlob || photo.originalBlob;
+    if (!sourceBlob) return;
+
+    let updated = false;
+    let thumbDataUrl = photo.thumbnailUrl;
+    let previewBlob = photo.previewBlob;
+
+    if (isMissingBase64Thumb) {
+      const thumb = await createDownsampledBlob(sourceBlob, 260, 0.8);
+      if (thumb.dataUrl) {
+        thumbDataUrl = thumb.dataUrl;
+        updated = true;
+      }
+    }
+
+    if (isMissingPreviewBlob && photo.originalBlob) {
+      const prev = await createDownsampledBlob(photo.originalBlob, 1400, 0.88);
+      if (prev.blob) {
+        previewBlob = prev.blob;
+        updated = true;
+      }
+    }
+
+    if (updated) {
+      await savePhoto({
+        ...photo,
+        thumbnailUrl: thumbDataUrl,
+        previewBlob: previewBlob,
+      });
+    }
+  } catch (err) {
+    // Non-blocking auto-repair
+    console.debug('Background photo repair notice:', err);
+  }
+}
+
 export async function getPhotosForAlbum(albumId: string): Promise<StoredPhoto[]> {
   const db = await getDB();
   return new Promise((resolve, reject) => {
@@ -238,9 +381,18 @@ export async function getPhotosForAlbum(albumId: string): Promise<StoredPhoto[]>
     const index = store.index('albumId');
     const req = index.getAll(IDBKeyRange.only(albumId));
     req.onsuccess = () => {
-      const photos = (req.result || []) as StoredPhoto[];
-      photos.sort((a, b) => a.createdAt - b.createdAt);
-      resolve(photos.map(ensurePhotoUrls));
+      const rawPhotos = (req.result || []) as StoredPhoto[];
+      rawPhotos.sort((a, b) => a.createdAt - b.createdAt);
+      const hydrated = rawPhotos.map(ensurePhotoUrls);
+
+      // Trigger asynchronous background healing for any legacy photos with non-persistent URLs
+      hydrated.forEach((p) => {
+        if (!p.thumbnailUrl || !p.thumbnailUrl.startsWith('data:') || !p.previewBlob) {
+          repairPhotoIfNeeded(p).catch(() => {});
+        }
+      });
+
+      resolve(hydrated);
     };
     req.onerror = () => reject(req.error);
   });
@@ -254,7 +406,15 @@ export async function getPhotoById(photoId: string): Promise<StoredPhoto | null>
     const req = store.get(photoId);
     req.onsuccess = () => {
       const photo = (req.result as StoredPhoto) || null;
-      resolve(photo ? ensurePhotoUrls(photo) : null);
+      if (!photo) {
+        resolve(null);
+        return;
+      }
+      const hydrated = ensurePhotoUrls(photo);
+      if (!hydrated.thumbnailUrl || !hydrated.thumbnailUrl.startsWith('data:') || !hydrated.previewBlob) {
+        repairPhotoIfNeeded(hydrated).catch(() => {});
+      }
+      resolve(hydrated);
     };
     req.onerror = () => reject(req.error);
   });

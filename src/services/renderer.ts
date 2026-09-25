@@ -7,6 +7,7 @@ import {
   PhotoPlacement,
   PHOTO_FILTERS
 } from '../types/album';
+import { buildCanvasFilterString } from './imageProcessing';
 
 export interface RenderPhotoSource {
   image: CanvasImageSource;
@@ -706,12 +707,10 @@ export function renderAlbumPage(
       ctx.imageSmoothingEnabled = true;
       ctx.imageSmoothingQuality = 'high';
 
-      // Apply Photo Filter if selected
-      if (placement?.filter && placement.filter !== 'none') {
-        const filterDef = PHOTO_FILTERS.find((f) => f.id === placement.filter);
-        if (filterDef && filterDef.cssFilter !== 'none') {
-          ctx.filter = filterDef.cssFilter;
-        }
+      // Apply Canvas API Photo Filter & Adjustments (B&W, Sepia, Brightness, Contrast)
+      const filterStr = buildCanvasFilterString(placement?.filter, placement?.adjustments);
+      if (filterStr && filterStr !== 'none') {
+        ctx.filter = filterStr;
       }
 
       try {
